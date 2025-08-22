@@ -3,18 +3,21 @@ import { validateMuxCredentials } from '@/lib/mux'
 
 export async function GET() {
   try {
-    // FIXED: Use the returned validation result object instead of treating it as boolean
-    const validation = validateMuxCredentials()
+    // FIXED: Await the Promise to get the actual MuxValidationResult
+    const validationResult = await validateMuxCredentials()
+    
+    // FIXED: Access properties directly from the result object, not from Promise
+    return NextResponse.json({
+      isValid: validationResult.isValid,
+      error: validationResult.error || null,
+      message: validationResult.isValid ? 'MUX credentials are valid' : 'MUX credentials are invalid'
+    })
+  } catch (error: any) {
+    console.error('Error validating MUX credentials:', error)
     
     return NextResponse.json({
-      isValid: validation.isValid,
-      error: validation.error || null
-    })
-  } catch (error) {
-    console.error('Error validating MUX credentials:', error)
-    return NextResponse.json({
       isValid: false,
-      error: 'Failed to validate MUX credentials'
+      error: error.message || 'Failed to validate MUX credentials'
     }, { status: 500 })
   }
 }
