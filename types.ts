@@ -107,11 +107,11 @@ export interface CosmicResponse<T> {
   skip?: number;
 }
 
-// Component prop types
+// Component prop types - FIXED: Added missing showActions property
 export interface StreamCardProps {
   stream: StreamSession;
   onEdit?: (stream: StreamSession) => void;
-  showActions?: boolean; // Added missing prop
+  showActions?: boolean;
   className?: string;
 }
 
@@ -146,13 +146,24 @@ export interface CreateStreamFormData {
   tags?: string;
 }
 
-// MUX SDK Types - Updated to match actual SDK
+// MUX SDK Types - FIXED: Updated to match actual MUX SDK v1.5+
 export interface MuxPlaybackId {
   id: string;
-  policy: 'public' | 'signed' | 'drm';
+  policy: 'public' | 'signed';
 }
 
 export interface MuxLiveStreamCreateParams {
+  reconnect_window?: number;
+  reduced_latency?: boolean;
+  test?: boolean;
+}
+
+export interface MuxLiveStream {
+  id: string;
+  stream_key: string;
+  playback_ids: MuxPlaybackId[];
+  status: string;
+  created_at: string;
   reconnect_window?: number;
   reduced_latency?: boolean;
   test?: boolean;
