@@ -185,6 +185,13 @@ export interface MuxAssetInput {
   url: string;
 }
 
+// ADDED: Missing MuxValidationResult type that was causing TS2305 error
+export interface MuxValidationResult {
+  isValid: boolean;
+  error?: string;
+  data?: any;
+}
+
 // Utility types
 export type OptionalMetadata<T extends CosmicObject> = Partial<T['metadata']>;
 export type CreateStreamData = Omit<StreamSession, 'id' | 'created_at' | 'modified_at'>;
