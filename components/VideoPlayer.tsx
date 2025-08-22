@@ -2,41 +2,42 @@
 
 import { useEffect, useRef, useState } from 'react'
 import MuxPlayer from '@mux/mux-player-react'
-import { Play, Pause, Volume2, VolumeX, Maximize, Settings } from 'lucide-react'
+import type { MuxPlayerElement } from '@mux/mux-player-react'
+import { Play, Pause, Volume2, VolumeX, Maximize2, Settings } from 'lucide-react'
 
 interface VideoPlayerProps {
   playbackId: string
   title: string
   isLive: boolean
   onViewerCountChange?: (count: number) => void
+  className?: string
 }
 
 export default function VideoPlayer({ 
   playbackId, 
   title, 
   isLive, 
-  onViewerCountChange 
+  onViewerCountChange,
+  className = "" 
 }: VideoPlayerProps) {
-  const playerRef = useRef<HTMLMediaElement>(null)
+  const playerRef = useRef<MuxPlayerElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [volume, setVolume] = useState(1)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const [showControls, setShowControls] = useState(true)
+  const [quality, setQuality] = useState('auto')
+  const [isBuffering, setIsBuffering] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Auto-hide controls timer
+  const controlsTimeoutRef = useRef<NodeJS.Timeout>()
 
   useEffect(() => {
     const player = playerRef.current
     if (!player) return
-
-    const handleLoadStart = () => setIsLoading(true)
-    const handleCanPlay = () => setIsLoading(false)
-    const handleError = () => {
-      setError('Failed to load video stream')
-      setIsLoading(false)
-    }
 
     const handlePlay = () => setIsPlaying(true)
     const handlePause = () => setIsPlaying(false)
@@ -44,35 +45,60 @@ export default function VideoPlayer({
       setVolume(player.volume)
       setIsMuted(player.muted)
     }
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(player.currentTime)
+    const handleTimeUpdate = () => setCurrentTime(player.currentTime || 0)
+    const handleDurationChange = () => setDuration(player.duration || 0)
+    const handleWaiting = () => setIsBuffering(true)
+    const handleCanPlay = () => setIsBuffering(false)
+    const handleError = (e: any) => {
+      console.error('Video player error:', e)
+      setError('Failed to load video stream')
+      setIsBuffering(false)
     }
 
-    const handleDurationChange = () => {
-      setDuration(player.duration || 0)
-    }
-
-    player.addEventListener('loadstart', handleLoadStart)
-    player.addEventListener('canplay', handleCanPlay)
-    player.addEventListener('error', handleError)
+    // Add event listeners
     player.addEventListener('play', handlePlay)
     player.addEventListener('pause', handlePause)
     player.addEventListener('volumechange', handleVolumeChange)
     player.addEventListener('timeupdate', handleTimeUpdate)
     player.addEventListener('durationchange', handleDurationChange)
+    player.addEventListener('waiting', handleWaiting)
+    player.addEventListener('canplay', handleCanPlay)
+    player.addEventListener('error', handleError)
 
     return () => {
-      player.removeEventListener('loadstart', handleLoadStart)
-      player.removeEventListener('canplay', handleCanPlay)
-      player.removeEventListener('error', handleError)
       player.removeEventListener('play', handlePlay)
       player.removeEventListener('pause', handlePause)
       player.removeEventListener('volumechange', handleVolumeChange)
       player.removeEventListener('timeupdate', handleTimeUpdate)
       player.removeEventListener('durationchange', handleDurationChange)
+      player.removeEventListener('waiting', handleWaiting)
+      player.removeEventListener('canplay', handleCanPlay)
+      player.removeEventListener('error', handleError)
     }
   }, [])
+
+  // Handle fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  // Auto-hide controls
+  const resetControlsTimer = () => {
+    setShowControls(true)
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current)
+    }
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false)
+      }, 3000)
+    }
+  }
 
   const togglePlayPause = () => {
     const player = playerRef.current
@@ -83,6 +109,7 @@ export default function VideoPlayer({
     } else {
       player.play()
     }
+    resetControlsTimer()
   }
 
   const toggleMute = () => {
@@ -90,6 +117,7 @@ export default function VideoPlayer({
     if (!player) return
 
     player.muted = !player.muted
+    resetControlsTimer()
   }
 
   const handleVolumeChange = (newVolume: number) => {
@@ -97,7 +125,11 @@ export default function VideoPlayer({
     if (!player) return
 
     player.volume = newVolume
-    setVolume(newVolume)
+    if (newVolume === 0) {
+      player.muted = true
+    } else if (player.muted) {
+      player.muted = false
+    }
   }
 
   const handleSeek = (newTime: number) => {
@@ -105,171 +137,183 @@ export default function VideoPlayer({
     if (!player || isLive) return
 
     player.currentTime = newTime
+    resetControlsTimer()
   }
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = async () => {
     const player = playerRef.current
     if (!player) return
 
-    if (!isFullscreen) {
-      if (player.requestFullscreen) {
-        player.requestFullscreen()
+    try {
+      if (!isFullscreen) {
+        await player.requestFullscreen()
+      } else {
+        await document.exitFullscreen()
       }
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen()
-      }
+    } catch (error) {
+      console.error('Fullscreen error:', error)
     }
+    resetControlsTimer()
   }
 
   const formatTime = (time: number): string => {
-    const minutes = Math.floor(time / 60)
+    const hours = Math.floor(time / 3600)
+    const minutes = Math.floor((time % 3600) / 60)
     const seconds = Math.floor(time % 60)
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+    }
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
   if (error) {
     return (
-      <div className="w-full h-full bg-black flex items-center justify-center text-white">
-        <div className="text-center">
-          <div className="text-4xl mb-4">⚠️</div>
-          <h3 className="text-lg font-medium mb-2">Stream Error</h3>
-          <p className="text-sm opacity-75">{error}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!playbackId) {
-    return (
-      <div className="w-full h-full bg-black flex items-center justify-center text-white">
-        <div className="text-center">
-          <div className="text-4xl mb-4">📺</div>
-          <h3 className="text-lg font-medium mb-2">No Stream Available</h3>
-          <p className="text-sm opacity-75">Stream is not configured</p>
+      <div className={`relative bg-black rounded-lg overflow-hidden ${className}`}>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-red-500 text-lg mb-2">⚠️</div>
+            <p className="text-white text-sm">{error}</p>
+            <button 
+              onClick={() => {
+                setError(null)
+                window.location.reload()
+              }}
+              className="mt-2 px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="relative w-full h-full bg-black group">
+    <div 
+      className={`relative bg-black rounded-lg overflow-hidden group ${className}`}
+      onMouseMove={resetControlsTimer}
+      onMouseLeave={() => isPlaying && setShowControls(false)}
+    >
       {/* Mux Player */}
       <MuxPlayer
         ref={playerRef}
         playbackId={playbackId}
-        streamType={isLive ? 'live' : 'on-demand'}
         title={title}
+        streamType={isLive ? 'live' : 'on-demand'}
         autoPlay={isLive}
         muted={false}
-        controls={false}
+        loop={!isLive}
         className="w-full h-full"
-        onLoadStart={() => setIsLoading(true)}
-        onCanPlay={() => setIsLoading(false)}
-        onError={() => setError('Failed to load stream')}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        style={{ aspectRatio: '16/9' }}
       />
 
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-          <div className="flex flex-col items-center text-white">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
-            <p className="text-sm">Loading stream...</p>
-          </div>
+      {/* Loading indicator */}
+      {isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
         </div>
       )}
 
-      {/* Live Indicator */}
+      {/* Live indicator */}
       {isLive && (
-        <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-full text-sm font-medium flex items-center space-x-2">
-          <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-          <span>LIVE</span>
+        <div className="absolute top-4 left-4 z-20">
+          <div className="flex items-center gap-2 px-3 py-1 bg-red-600 text-white text-sm font-medium rounded-full">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+            LIVE
+          </div>
         </div>
       )}
 
       {/* Custom Controls */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-        <div className="flex items-center space-x-4">
-          {/* Play/Pause Button */}
-          <button
-            onClick={togglePlayPause}
-            className="text-white hover:text-gray-300 transition-colors"
-          >
-            {isPlaying ? (
-              <Pause className="w-6 h-6" />
-            ) : (
-              <Play className="w-6 h-6" />
-            )}
-          </button>
-
-          {/* Progress Bar (only for VOD) */}
+      <div className={`absolute bottom-0 left-0 right-0 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        <div className="bg-gradient-to-t from-black via-black/80 to-transparent p-4">
+          {/* Progress bar (not shown for live streams) */}
           {!isLive && duration > 0 && (
-            <div className="flex-1 flex items-center space-x-2">
-              <span className="text-white text-sm">{formatTime(currentTime)}</span>
-              <div className="flex-1 h-1 bg-gray-600 rounded cursor-pointer">
+            <div className="mb-4">
+              <div 
+                className="w-full h-1 bg-white/30 rounded-full cursor-pointer"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  const pos = (e.clientX - rect.left) / rect.width
+                  handleSeek(pos * duration)
+                }}
+              >
                 <div 
-                  className="h-full bg-white rounded"
+                  className="h-full bg-white rounded-full transition-all"
                   style={{ width: `${(currentTime / duration) * 100}%` }}
-                  onClick={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect()
-                    const clickX = e.clientX - rect.left
-                    const newTime = (clickX / rect.width) * duration
-                    handleSeek(newTime)
-                  }}
-                ></div>
+                />
               </div>
-              <span className="text-white text-sm">{formatTime(duration)}</span>
             </div>
           )}
 
-          {/* Volume Controls */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={toggleMute}
-              className="text-white hover:text-gray-300 transition-colors"
-            >
-              {isMuted || volume === 0 ? (
-                <VolumeX className="w-5 h-5" />
-              ) : (
-                <Volume2 className="w-5 h-5" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              {/* Play/Pause */}
+              <button
+                onClick={togglePlayPause}
+                className="text-white hover:text-gray-300 transition-colors"
+              >
+                {isPlaying ? (
+                  <Pause className="h-6 w-6" />
+                ) : (
+                  <Play className="h-6 w-6" />
+                )}
+              </button>
+
+              {/* Volume */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleMute}
+                  className="text-white hover:text-gray-300 transition-colors"
+                >
+                  {isMuted || volume === 0 ? (
+                    <VolumeX className="h-5 w-5" />
+                  ) : (
+                    <Volume2 className="h-5 w-5" />
+                  )}
+                </button>
+                <div className="w-20 h-1 bg-white/30 rounded-full cursor-pointer">
+                  <div 
+                    className="h-full bg-white rounded-full"
+                    style={{ width: `${volume * 100}%` }}
+                  />
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Time display */}
+              {!isLive && (
+                <div className="text-white text-sm">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </div>
               )}
-            </button>
-            <div className="w-20 h-1 bg-gray-600 rounded cursor-pointer">
-              <div 
-                className="h-full bg-white rounded"
-                style={{ width: `${volume * 100}%` }}
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect()
-                  const clickX = e.clientX - rect.left
-                  const newVolume = clickX / rect.width
-                  handleVolumeChange(Math.max(0, Math.min(1, newVolume)))
-                }}
-              ></div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {/* Quality selector placeholder */}
+              <button className="text-white hover:text-gray-300 transition-colors">
+                <Settings className="h-5 w-5" />
+              </button>
+
+              {/* Fullscreen */}
+              <button
+                onClick={toggleFullscreen}
+                className="text-white hover:text-gray-300 transition-colors"
+              >
+                <Maximize2 className="h-5 w-5" />
+              </button>
             </div>
           </div>
-
-          {/* Settings Button */}
-          <button className="text-white hover:text-gray-300 transition-colors">
-            <Settings className="w-5 h-5" />
-          </button>
-
-          {/* Fullscreen Button */}
-          <button
-            onClick={toggleFullscreen}
-            className="text-white hover:text-gray-300 transition-colors"
-          >
-            <Maximize className="w-5 h-5" />
-          </button>
         </div>
-      </div>
-
-      {/* Stream Title Overlay */}
-      <div className="absolute top-4 right-4 max-w-md">
-        <h2 className="text-white text-lg font-medium bg-black/50 px-3 py-2 rounded backdrop-blur-sm">
-          {title}
-        </h2>
       </div>
     </div>
   )

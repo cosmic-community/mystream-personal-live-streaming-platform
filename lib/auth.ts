@@ -1,121 +1,176 @@
-import { NextRequest } from 'next/server'
+// Simple rate limiting and authentication utilities
 
-// Simple rate limiting implementation
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
-
-export function checkRateLimit(identifier: string, maxRequests: number, windowMs: number): boolean {
-  const now = Date.now()
-  const windowStart = now - windowMs
-
-  // Clean up old entries
-  for (const [key, value] of rateLimitMap.entries()) {
-    if (value.resetTime < windowStart) {
-      rateLimitMap.delete(key)
-    }
-  }
-
-  const current = rateLimitMap.get(identifier)
-  
-  if (!current) {
-    rateLimitMap.set(identifier, { count: 1, resetTime: now + windowMs })
-    return true
-  }
-
-  if (current.resetTime < now) {
-    // Window has expired, reset
-    rateLimitMap.set(identifier, { count: 1, resetTime: now + windowMs })
-    return true
-  }
-
-  if (current.count >= maxRequests) {
-    return false
-  }
-
-  current.count++
-  return true
+interface RateLimitEntry {
+  count: number;
+  resetTime: number;
 }
 
-export function getUserIdentifier(request: NextRequest): string {
-  // Get IP address from various possible headers
-  const forwarded = request.headers.get('x-forwarded-for')
-  const realIp = request.headers.get('x-real-ip')
-  const clientIp = request.headers.get('x-client-ip')
-  
-  const ip = forwarded?.split(',')[0]?.trim() || 
-            realIp || 
-            clientIp || 
-            'unknown'
+// In-memory rate limiting store (use Redis in production)
+const rateLimitStore = new Map<string, RateLimitEntry>();
 
-  return ip
+// Clean up expired entries periodically
+setInterval(() => {
+  const now = Date.now();
+  const entries = Array.from(rateLimitStore.entries());
+  
+  for (const [key, entry] of entries) {
+    if (entry.resetTime < now) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, 60000); // Clean up every minute
+
+export function checkRateLimit(
+  identifier: string,
+  maxRequests: number,
+  windowMs: number
+): boolean {
+  const now = Date.now();
+  const key = identifier;
+  
+  let entry = rateLimitStore.get(key);
+  
+  // If no entry or window has expired, create new entry
+  if (!entry || entry.resetTime < now) {
+    entry = {
+      count: 1,
+      resetTime: now + windowMs
+    };
+    rateLimitStore.set(key, entry);
+    return true;
+  }
+  
+  // Check if within rate limit
+  if (entry.count < maxRequests) {
+    entry.count++;
+    return true;
+  }
+  
+  // Rate limit exceeded
+  return false;
+}
+
+export function getUserIdentifier(request: Request): string {
+  // Try to get IP from various headers
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIp = request.headers.get('x-real-ip');
+  const cfConnectingIp = request.headers.get('cf-connecting-ip');
+  
+  // Extract IP from forwarded header (first IP in the chain)
+  if (forwarded) {
+    const firstIp = forwarded.split(',')[0]?.trim();
+    if (firstIp) return firstIp;
+  }
+  
+  if (realIp) return realIp;
+  if (cfConnectingIp) return cfConnectingIp;
+  
+  // Fallback to a default identifier
+  return 'unknown';
+}
+
+export function generateSecureToken(length: number = 32): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  
+  // Use crypto if available (browser/Node.js), fallback to Math.random
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const array = new Uint8Array(length);
+    crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      result += chars[array[i] % chars.length];
+    }
+  } else {
+    // Fallback for environments without crypto
+    for (let i = 0; i < length; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+  }
+  
+  return result;
 }
 
 export function validateAccessToken(token: string): boolean {
-  // Basic token validation
+  // Basic token format validation
   if (!token || typeof token !== 'string') {
-    return false
-  }
-
-  // Check if token starts with expected prefix
-  if (!token.startsWith('tkn_')) {
-    return false
-  }
-
-  // Check token length (should be prefix + 32 characters)
-  if (token.length !== 36) {
-    return false
-  }
-
-  return true
-}
-
-export function generateSecureToken(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let result = 'tkn_'
-  
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length))
+    return false;
   }
   
-  return result
-}
-
-export function isValidStreamId(streamId: string): boolean {
-  if (!streamId || typeof streamId !== 'string') {
-    return false
+  // Check if token starts with expected prefix and has reasonable length
+  if (!token.startsWith('tkn_') || token.length < 20) {
+    return false;
   }
-
-  // Basic validation for Cosmic object IDs (24 character hex string)
-  return /^[a-f0-9]{24}$/i.test(streamId)
-}
-
-export function sanitizeInput(input: string, maxLength: number = 1000): string {
-  if (!input || typeof input !== 'string') {
-    return ''
-  }
-
-  return input
-    .trim()
-    .replace(/<[^>]*>/g, '') // Remove HTML tags
-    .replace(/[<>\"'&]/g, '') // Remove potentially dangerous characters
-    .substring(0, maxLength)
-}
-
-export function isValidViewerName(name: string): boolean {
-  if (!name || typeof name !== 'string') {
-    return false
-  }
-
-  const trimmed = name.trim()
   
-  // Check length
-  if (trimmed.length < 2 || trimmed.length > 50) {
-    return false
+  // Check for valid characters (alphanumeric + underscore)
+  if (!/^tkn_[A-Za-z0-9_]+$/.test(token)) {
+    return false;
   }
+  
+  return true;
+}
 
-  // Check for valid characters (alphanumeric, spaces, hyphens, underscores)
-  if (!/^[a-zA-Z0-9\s_-]+$/.test(trimmed)) {
-    return false
+export function hashPassword(password: string): Promise<string> {
+  // This would typically use bcrypt or similar
+  // For this example, we'll use a simple approach
+  // In production, use proper password hashing
+  return Promise.resolve(
+    Buffer.from(password).toString('base64')
+  );
+}
+
+export function verifyPassword(password: string, hash: string): Promise<boolean> {
+  // This would typically use bcrypt.compare or similar
+  // For this example, we'll use a simple approach
+  // In production, use proper password verification
+  const computed = Buffer.from(password).toString('base64');
+  return Promise.resolve(computed === hash);
+}
+
+// Session management helpers
+export function generateSessionId(): string {
+  return generateSecureToken(48);
+}
+
+export function isValidSessionId(sessionId: string): boolean {
+  return typeof sessionId === 'string' && sessionId.length >= 20;
+}
+
+// IP address utilities
+export function isValidIPAddress(ip: string): boolean {
+  // Basic IP validation regex
+  const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+  const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+  
+  return ipv4Regex.test(ip) || ipv6Regex.test(ip);
+}
+
+export function sanitizeIPAddress(ip: string): string {
+  if (!ip || typeof ip !== 'string') {
+    return 'unknown';
   }
+  
+  // Remove any surrounding whitespace
+  const cleaned = ip.trim();
+  
+  // Basic validation and return
+  if (isValidIPAddress(cleaned)) {
+    return cleaned;
+  }
+  
+  return 'unknown';
+}
 
-  return true
+// Error handling
+export class AuthError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+export class RateLimitError extends Error {
+  constructor(message: string = 'Rate limit exceeded') {
+    super(message);
+    this.name = 'RateLimitError';
+  }
 }

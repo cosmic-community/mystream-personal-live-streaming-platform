@@ -1,161 +1,162 @@
 import Mux from '@mux/mux-node'
+import type { StreamSession } from '@/types'
 
 // Initialize Mux client
 const mux = new Mux({
-  tokenId: process.env.MUX_TOKEN_ID,
-  tokenSecret: process.env.MUX_TOKEN_SECRET
+  tokenId: process.env.MUX_TOKEN_ID as string,
+  tokenSecret: process.env.MUX_TOKEN_SECRET as string,
 })
 
-export interface MuxLiveStreamOptions {
-  playback_policy: 'public' | 'signed'
-  new_asset_settings?: {
-    playback_policy: 'public' | 'signed'
-  }
+export interface MuxAsset {
+  id: string
+  status: string
+  playback_ids?: Array<{
+    id: string
+    policy: 'public' | 'signed'
+  }>
+  tracks?: Array<{
+    type: string
+    max_width?: number
+    max_height?: number
+  }>
 }
 
 export interface MuxLiveStream {
   id: string
+  status: string
   stream_key: string
-  playback_ids: Array<{
+  playback_ids?: Array<{
     id: string
-    policy: string
+    policy: 'public' | 'signed'
   }>
-  status: 'idle' | 'active'
-  created_at: string
 }
 
-export interface MuxAsset {
-  id: string
-  status: 'preparing' | 'ready' | 'errored'
-  playback_ids: Array<{
-    id: string
-    policy: string
-  }>
-  duration?: number
-  created_at: string
-}
-
-export async function createLiveStream(options: MuxLiveStreamOptions = { playback_policy: 'public' }): Promise<MuxLiveStream> {
+// Create a new live stream
+export async function createLiveStream(options?: {
+  playback_policy?: Array<'public' | 'signed'>
+}): Promise<MuxLiveStream> {
   try {
-    const response = await mux.video.liveStreams.create({
-      playback_policy: [options.playback_policy],
-      new_asset_settings: options.new_asset_settings
-    })
-
-    return {
-      id: response.id || '',
-      stream_key: response.stream_key || '',
-      playback_ids: response.playback_ids || [],
-      status: response.status as 'idle' | 'active' || 'idle',
-      created_at: response.created_at || new Date().toISOString()
+    const streamOptions: any = {
+      playback_policy: options?.playback_policy || ['public'],
+      new_asset_settings: {
+        playback_policy: options?.playback_policy || ['public']
+      }
     }
+
+    const liveStream = await mux.video.liveStreams.create(streamOptions)
+    return liveStream as MuxLiveStream
   } catch (error) {
-    console.error('Error creating Mux live stream:', error)
+    console.error('Error creating live stream:', error)
     throw new Error('Failed to create live stream')
   }
 }
 
+// Get live stream details
 export async function getLiveStream(streamId: string): Promise<MuxLiveStream | null> {
   try {
-    const response = await mux.video.liveStreams.retrieve(streamId)
-
-    return {
-      id: response.id || '',
-      stream_key: response.stream_key || '',
-      playback_ids: response.playback_ids || [],
-      status: response.status as 'idle' | 'active' || 'idle',
-      created_at: response.created_at || new Date().toISOString()
-    }
+    const liveStream = await mux.video.liveStreams.retrieve(streamId)
+    return liveStream as MuxLiveStream
   } catch (error) {
-    console.error('Error retrieving Mux live stream:', error)
+    console.error('Error fetching live stream:', error)
     return null
   }
 }
 
+// Delete a live stream
 export async function deleteLiveStream(streamId: string): Promise<boolean> {
   try {
     await mux.video.liveStreams.del(streamId)
     return true
   } catch (error) {
-    console.error('Error deleting Mux live stream:', error)
+    console.error('Error deleting live stream:', error)
     return false
   }
 }
 
+// Get primary playback ID from stream session
+export function getPrimaryPlaybackId(stream: StreamSession): string | null {
+  return stream.metadata?.mux_playback_id || null
+}
+
+// Create a new asset for recording
+export async function createAsset(options?: {
+  playback_policy?: Array<'public' | 'signed'>
+}): Promise<MuxAsset> {
+  try {
+    const assetOptions: any = {
+      playback_policy: options?.playback_policy || ['public']
+    }
+
+    const asset = await mux.video.assets.create(assetOptions)
+    return asset as MuxAsset
+  } catch (error) {
+    console.error('Error creating asset:', error)
+    throw new Error('Failed to create asset')
+  }
+}
+
+// Get asset details
 export async function getAsset(assetId: string): Promise<MuxAsset | null> {
   try {
-    const response = await mux.video.assets.retrieve(assetId)
-
-    return {
-      id: response.id || '',
-      status: response.status as 'preparing' | 'ready' | 'errored' || 'preparing',
-      playback_ids: response.playback_ids || [],
-      duration: response.duration,
-      created_at: response.created_at || new Date().toISOString()
-    }
+    const asset = await mux.video.assets.retrieve(assetId)
+    return asset as MuxAsset
   } catch (error) {
-    console.error('Error retrieving Mux asset:', error)
+    console.error('Error fetching asset:', error)
     return null
   }
 }
 
-export async function createAssetFromLiveStream(liveStreamId: string): Promise<MuxAsset | null> {
+// Delete an asset
+export async function deleteAsset(assetId: string): Promise<boolean> {
   try {
-    const response = await mux.video.assets.create({
-      input: [{ url: `mux://live-streams/${liveStreamId}` }],
-      playback_policy: ['public']
-    })
-
-    return {
-      id: response.id || '',
-      status: response.status as 'preparing' | 'ready' | 'errored' || 'preparing',
-      playback_ids: response.playback_ids || [],
-      duration: response.duration,
-      created_at: response.created_at || new Date().toISOString()
-    }
+    await mux.video.assets.del(assetId)
+    return true
   } catch (error) {
-    console.error('Error creating asset from live stream:', error)
-    return null
+    console.error('Error deleting asset:', error)
+    return false
   }
 }
 
-export function getPlaybackUrl(playbackId: string): string {
+// Utility functions
+export function getPlaybackUrl(playbackId: string, signed: boolean = false): string {
+  if (signed) {
+    // For signed URLs, you would need to implement JWT token generation
+    return `https://stream.mux.com/${playbackId}.m3u8`
+  }
   return `https://stream.mux.com/${playbackId}.m3u8`
 }
 
-export function getThumbnailUrl(playbackId: string, options: {
+export function getThumbnailUrl(playbackId: string, options?: {
+  time?: number
   width?: number
   height?: number
-  fit_mode?: 'preserve' | 'crop' | 'pad'
-  time?: number
-} = {}): string {
+}): string {
   const params = new URLSearchParams()
   
-  if (options.width) params.set('width', options.width.toString())
-  if (options.height) params.set('height', options.height.toString())
-  if (options.fit_mode) params.set('fit_mode', options.fit_mode)
-  if (options.time !== undefined) params.set('time', options.time.toString())
+  if (options?.time !== undefined) {
+    params.set('time', options.time.toString())
+  }
+  if (options?.width) {
+    params.set('width', options.width.toString())
+  }
+  if (options?.height) {
+    params.set('height', options.height.toString())
+  }
 
   const queryString = params.toString()
   return `https://image.mux.com/${playbackId}/thumbnail.jpg${queryString ? `?${queryString}` : ''}`
 }
 
-export function isValidPlaybackId(playbackId: string): boolean {
-  if (!playbackId || typeof playbackId !== 'string') {
-    return false
-  }
-
-  // Mux playback IDs are typically alphanumeric strings
-  return /^[a-zA-Z0-9]+$/.test(playbackId) && playbackId.length > 10
+// Stream status helpers
+export function isStreamActive(stream: MuxLiveStream): boolean {
+  return stream.status === 'active'
 }
 
-export function parseWebhookSignature(signature: string, secret: string, body: string): boolean {
-  try {
-    // Mux webhook signature verification logic would go here
-    // This is a simplified version - in production you'd use the actual Mux webhook verification
-    return signature.includes('mux-signature')
-  } catch (error) {
-    console.error('Error parsing webhook signature:', error)
-    return false
-  }
+export function isStreamReady(stream: MuxLiveStream): boolean {
+  return stream.status === 'ready' || stream.status === 'active'
+}
+
+// Error handling helper
+export function isMuxError(error: unknown): error is { type: string; messages: string[] } {
+  return typeof error === 'object' && error !== null && 'type' in error && 'messages' in error
 }
