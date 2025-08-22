@@ -156,7 +156,7 @@ export async function createAssetFromLiveStream(liveStreamId: string): Promise<M
           url: `mux://live-streams/${liveStreamId}`
         }
       ],
-      playbook_policy: ['public']
+      playback_policy: ['public']
     })
 
     return {
@@ -187,7 +187,7 @@ export async function getAsset(assetId: string): Promise<MuxAssetResponse | null
     return {
       id: asset.id || '',
       status: asset.status || '',
-      playbook_ids: asset.playback_ids?.map(pid => ({
+      playback_ids: asset.playback_ids?.map(pid => ({
         id: pid.id || '',
         policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
       })) || [],
