@@ -1,35 +1,54 @@
-import Mux from '@mux/mux-node'
-import { updateStreamSession } from './cosmic'
-import type { MuxLiveStream, MuxLiveStreamCreateParams } from '@/types'
+import { MuxLiveStream, MuxPlaybackId } from '@/types'
 
-const mux = new Mux({
-  tokenId: process.env.MUX_TOKEN_ID!,
-  tokenSecret: process.env.MUX_TOKEN_SECRET!
-})
+// MUX Configuration
+const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID
+const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET
 
-export interface CreateLiveStreamParams {
-  reconnectWindow?: number;
-  reducedLatency?: boolean;
-  test?: boolean;
+if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
+  throw new Error('MUX_TOKEN_ID and MUX_TOKEN_SECRET environment variables are required')
 }
 
-export async function createLiveStream(params: CreateLiveStreamParams = {}): Promise<MuxLiveStream> {
-  try {
-    const liveStreamParams: MuxLiveStreamCreateParams = {
-      reconnect_window: params.reconnectWindow || 60,
-      reduced_latency: params.reducedLatency || false,
-      test: params.test || false
-    }
+// Initialize MUX SDK with proper error handling
+let Mux: any
+try {
+  Mux = require('@mux/mux-node')
+} catch (error) {
+  console.warn('MUX SDK not available - streaming functionality will be limited')
+}
 
-    const liveStream = await mux.video.liveStreams.create(liveStreamParams)
-    
-    // FIXED: Corrected typo from playbook_ids to playback_ids and properly typed parameter
-    const playbackId = liveStream.playback_ids?.find((p: any) => p.policy === 'public')?.id || ''
+const mux = Mux ? new Mux({
+  tokenId: MUX_TOKEN_ID,
+  tokenSecret: MUX_TOKEN_SECRET,
+}) : null
+
+export async function createLiveStream(options: {
+  reconnectWindow?: number
+  reducedLatency?: boolean  
+  test?: boolean
+} = {}): Promise<MuxLiveStream | null> {
+  if (!mux) {
+    console.error('MUX SDK not available')
+    return null
+  }
+
+  try {
+    const liveStream = await mux.video.liveStreams.create({
+      reconnect_window: options.reconnectWindow || 60,
+      reduced_latency: options.reducedLatency || false,
+      test: options.test || false,
+      playback_policy: ['public']
+    })
+
+    // Transform MUX response to match our types
+    const playbackIds: MuxPlaybackId[] = (liveStream.playback_ids || []).map((playbackId: any) => ({
+      id: playbackId.id,
+      policy: playbackId.policy === 'drm' ? 'signed' : playbackId.policy as 'public' | 'signed'
+    }))
 
     return {
       id: liveStream.id,
       stream_key: liveStream.stream_key,
-      playback_ids: liveStream.playback_ids || [],
+      playback_ids: playbackIds,
       status: liveStream.status,
       created_at: liveStream.created_at,
       reconnect_window: liveStream.reconnect_window,
@@ -42,14 +61,25 @@ export async function createLiveStream(params: CreateLiveStreamParams = {}): Pro
   }
 }
 
-export async function getLiveStream(streamId: string): Promise<MuxLiveStream | null> {
+export async function getLiveStream(liveStreamId: string): Promise<MuxLiveStream | null> {
+  if (!mux) {
+    console.error('MUX SDK not available')
+    return null
+  }
+
   try {
-    const liveStream = await mux.video.liveStreams.retrieve(streamId)
+    const liveStream = await mux.video.liveStreams.retrieve(liveStreamId)
     
+    // Transform MUX response to match our types
+    const playbackIds: MuxPlaybackId[] = (liveStream.playback_ids || []).map((playbackId: any) => ({
+      id: playbackId.id,
+      policy: playbackId.policy === 'drm' ? 'signed' : playbackId.policy as 'public' | 'signed'
+    }))
+
     return {
       id: liveStream.id,
       stream_key: liveStream.stream_key,
-      playback_ids: liveStream.playback_ids || [],
+      playback_ids: playbackIds,
       status: liveStream.status,
       created_at: liveStream.created_at,
       reconnect_window: liveStream.reconnect_window,
@@ -62,9 +92,15 @@ export async function getLiveStream(streamId: string): Promise<MuxLiveStream | n
   }
 }
 
-export async function deleteLiveStream(streamId: string): Promise<boolean> {
+export async function deleteLiveStream(liveStreamId: string): Promise<boolean> {
+  if (!mux) {
+    console.error('MUX SDK not available')
+    return false
+  }
+
   try {
-    await mux.video.liveStreams.del(streamId)
+    // Use the correct method name for MUX SDK
+    await mux.video.liveStreams.delete(liveStreamId)
     return true
   } catch (error) {
     console.error('Error deleting MUX live stream:', error)
@@ -72,81 +108,92 @@ export async function deleteLiveStream(streamId: string): Promise<boolean> {
   }
 }
 
-export async function createLiveStreamAsset(streamId: string): Promise<string | null> {
+export async function createAsset(input: { url: string }): Promise<any> {
+  if (!mux) {
+    console.error('MUX SDK not available')
+    return null
+  }
+
   try {
     const asset = await mux.video.assets.create({
-      input: [{
-        url: `mux://live-streams/${streamId}`
-      }],
+      input: [input],
       playback_policy: ['public']
     })
-    
-    return asset.id
+    return asset
   } catch (error) {
     console.error('Error creating MUX asset:', error)
+    throw new Error('Failed to create asset')
+  }
+}
+
+export async function getAsset(assetId: string): Promise<any> {
+  if (!mux) {
+    console.error('MUX SDK not available')  
+    return null
+  }
+
+  try {
+    return await mux.video.assets.retrieve(assetId)
+  } catch (error) {
+    console.error('Error retrieving MUX asset:', error)
     return null
   }
 }
 
-export async function getAssetPlaybackUrl(assetId: string): Promise<string | null> {
-  try {
-    const asset = await mux.video.assets.retrieve(assetId)
-    const playbackId = asset.playback_ids?.find((p: any) => p.policy === 'public')?.id
-    
-    if (!playbackId) {
-      return null
-    }
-    
-    return `https://stream.mux.com/${playbackId}.m3u8`
-  } catch (error) {
-    console.error('Error getting MUX asset playback URL:', error)
-    return null
+export function generatePlaybackUrl(playbackId: string, options?: {
+  token?: string
+  thumbnailTime?: number
+}): string {
+  let url = `https://stream.mux.com/${playbackId}.m3u8`
+  
+  if (options?.token) {
+    url += `?token=${options.token}`
   }
+  
+  return url
 }
 
-// FIXED: Removed metrics.get() which doesn't exist, replaced with proper webhook handling
-export async function handleStreamStatusWebhook(
-  eventType: string,
-  streamId: string,
-  cosmicStreamId: string
-): Promise<void> {
-  try {
-    let status = 'scheduled'
-    
-    switch (eventType) {
-      case 'video.live_stream.active':
-        status = 'live'
-        break
-      case 'video.live_stream.idle':
-        status = 'ended'
-        break
-      case 'video.live_stream.disconnected':
-        status = 'ended'
-        break
-      default:
-        return // Ignore other event types
-    }
-
-    await updateStreamSession(cosmicStreamId, { status })
-  } catch (error) {
-    console.error('Error handling MUX webhook:', error)
+export function generateThumbnailUrl(playbackId: string, options?: {
+  time?: number
+  width?: number
+  height?: number
+  fitMode?: string
+}): string {
+  let url = `https://image.mux.com/${playbackId}/thumbnail.jpg`
+  
+  const params = new URLSearchParams()
+  if (options?.time !== undefined) params.append('time', options.time.toString())
+  if (options?.width) params.append('width', options.width.toString())
+  if (options?.height) params.append('height', options.height.toString())
+  if (options?.fitMode) params.append('fit_mode', options.fitMode)
+  
+  const queryString = params.toString()
+  if (queryString) {
+    url += `?${queryString}`
   }
+  
+  return url
 }
 
-export function validateMuxWebhook(signature: string, timestamp: string, body: string): boolean {
-  // Implementation would depend on your webhook validation needs
-  // This is a placeholder for MUX webhook signature validation
-  return true
+// Helper function to validate MUX configuration
+export function validateMuxConfig(): boolean {
+  return Boolean(MUX_TOKEN_ID && MUX_TOKEN_SECRET && mux)
 }
 
-export async function getViewerCount(streamId: string): Promise<number> {
+// Helper function to get MUX webhook signature verification
+export function verifyWebhookSignature(
+  rawBody: string,
+  signature: string,
+  secret: string
+): boolean {
+  if (!mux || !mux.webhooks) {
+    return false
+  }
+
   try {
-    // MUX doesn't provide real-time viewer count directly
-    // You would need to implement this through your own tracking
-    // or use MUX's analytics API with appropriate queries
-    return 0
+    return mux.webhooks.verifyHeader(rawBody, signature, secret)
   } catch (error) {
-    console.error('Error getting viewer count:', error)
-    return 0
+    console.error('Error verifying MUX webhook signature:', error)
+    return false
   }
 }
