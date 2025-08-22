@@ -15,7 +15,7 @@ export const cosmic = createBucketClient({
 })
 
 // Simple error helper for Cosmic SDK
-function hasStatus(error: unknown): error is { status: number } {
+function cosmicHasStatus(error: unknown): error is { status: number } {
   return typeof error === 'object' && error !== null && 'status' in error;
 }
 
@@ -33,7 +33,7 @@ export async function getStreamSessions(): Promise<StreamSession[]> {
       return dateB - dateA; // Newest first
     });
   } catch (error) {
-    if (hasStatus(error) && error.status === 404) {
+    if (cosmicHasStatus(error) && error.status === 404) {
       return [];
     }
     throw new Error('Failed to fetch stream sessions');
@@ -55,7 +55,7 @@ export async function getStreamSession(slug: string): Promise<StreamSession | nu
     
     return session;
   } catch (error) {
-    if (hasStatus(error) && error.status === 404) {
+    if (cosmicHasStatus(error) && error.status === 404) {
       return null;
     }
     throw new Error('Failed to fetch stream session');
@@ -135,7 +135,7 @@ export async function getAccessLinks(streamId?: string): Promise<AccessLink[]> {
       return dateB - dateA; // Newest first
     });
   } catch (error) {
-    if (hasStatus(error) && error.status === 404) {
+    if (cosmicHasStatus(error) && error.status === 404) {
       return [];
     }
     throw new Error('Failed to fetch access links');
@@ -174,7 +174,7 @@ export async function getAccessLinkByToken(token: string): Promise<AccessLink | 
     
     return link;
   } catch (error) {
-    if (hasStatus(error) && error.status === 404) {
+    if (cosmicHasStatus(error) && error.status === 404) {
       return null;
     }
     throw new Error('Failed to fetch access link');
@@ -250,7 +250,7 @@ export async function getStreamSettings(): Promise<StreamSettings | null> {
     
     return settings[0] || null; // Should be singleton
   } catch (error) {
-    if (hasStatus(error) && error.status === 404) {
+    if (cosmicHasStatus(error) && error.status === 404) {
       return null;
     }
     throw new Error('Failed to fetch stream settings');
@@ -293,7 +293,7 @@ export async function getChatMessages(streamId: string, limit: number = 50): Pro
       return dateA - dateB; // Oldest first for chat
     });
   } catch (error) {
-    if (hasStatus(error) && error.status === 404) {
+    if (cosmicHasStatus(error) && error.status === 404) {
       return [];
     }
     throw new Error('Failed to fetch chat messages');

@@ -153,7 +153,7 @@ export function createWebSocketConnection(
 
     ws.onmessage = (event) => {
       try {
-        const message: WebSocketMessage = JSON.parse(event.data);
+        const message: WebSocketMessage = JSON.parse(event.data as string);
         onMessage(message);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
@@ -161,12 +161,12 @@ export function createWebSocketConnection(
     };
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('WebSocket error:', error)
       onError?.(error);
     };
 
     ws.onclose = (event) => {
-      console.log('WebSocket connection closed:', event.code, event.reason);
+      console.log('WebSocket connection closed:', event.code, event.reason)
       onClose?.(event);
     };
 

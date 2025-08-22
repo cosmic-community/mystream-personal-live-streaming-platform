@@ -211,3 +211,36 @@ export function getSelectDropdownKey(field: SelectDropdownField | undefined): st
 export function getSelectDropdownValue(field: SelectDropdownField | undefined): string {
   return field?.value || '';
 }
+
+// Helper functions to safely access metadata fields
+export function getStreamStatus(stream: StreamSession): StreamStatus {
+  return (stream.metadata?.status?.key || 'scheduled') as StreamStatus;
+}
+
+export function getStreamStatusDisplay(stream: StreamSession): string {
+  return stream.metadata?.status?.value || 'Scheduled';
+}
+
+export function getStreamQuality(stream: StreamSession): StreamQuality {
+  return (stream.metadata?.stream_quality?.key || '1080p') as StreamQuality;
+}
+
+export function getStreamQualityDisplay(stream: StreamSession): string {
+  return stream.metadata?.stream_quality?.value || '1080p Full HD';
+}
+
+export function getAccessPermission(link: AccessLink): AccessPermission {
+  return (link.metadata?.permissions?.key || 'view-only') as AccessPermission;
+}
+
+export function getAccessPermissionDisplay(link: AccessLink): string {
+  return link.metadata?.permissions?.value || 'View Only';
+}
+
+export function getPrivacyLevel(settings: StreamSettings): PrivacyLevel {
+  return (settings.metadata?.default_privacy?.key || 'private') as PrivacyLevel;
+}
+
+export function getPrivacyLevelDisplay(settings: StreamSettings): string {
+  return settings.metadata?.default_privacy?.value || 'Private (Link Required)';
+}

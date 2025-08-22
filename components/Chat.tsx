@@ -64,7 +64,7 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
 
       ws.onmessage = (event) => {
         try {
-          const message: WebSocketMessage = JSON.parse(event.data as string);
+          const message: WebSocketMessage = JSON.parse(event.data);
           handleWebSocketMessage(message);
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
