@@ -2,51 +2,52 @@ import Mux from '@mux/mux-node'
 
 // Initialize Mux client
 const mux = new Mux({
-  tokenId: process.env.MUX_TOKEN_ID!,
-  tokenSecret: process.env.MUX_TOKEN_SECRET!
+  tokenId: process.env.MUX_TOKEN_ID,
+  tokenSecret: process.env.MUX_TOKEN_SECRET
 })
+
+export interface MuxLiveStreamOptions {
+  playback_policy: 'public' | 'signed'
+  new_asset_settings?: {
+    playback_policy: 'public' | 'signed'
+  }
+}
 
 export interface MuxLiveStream {
   id: string
   stream_key: string
   playback_ids: Array<{
     id: string
-    policy: 'public' | 'signed'
+    policy: string
   }>
-  status: 'idle' | 'active' | 'disabled'
+  status: 'idle' | 'active'
   created_at: string
-  reconnect_window: number
-  max_continuous_duration: number
 }
 
-export interface CreateLiveStreamOptions {
-  playback_policy?: 'public' | 'signed'
-  new_asset_settings?: {
-    playback_policy: 'public' | 'signed'
-  }
-  reconnect_window?: number
-  max_continuous_duration?: number
+export interface MuxAsset {
+  id: string
+  status: 'preparing' | 'ready' | 'errored'
+  playback_ids: Array<{
+    id: string
+    policy: string
+  }>
+  duration?: number
+  created_at: string
 }
 
-export async function createLiveStream(options: CreateLiveStreamOptions = {}): Promise<MuxLiveStream> {
+export async function createLiveStream(options: MuxLiveStreamOptions = { playback_policy: 'public' }): Promise<MuxLiveStream> {
   try {
-    const liveStream = await mux.video.liveStreams.create({
-      playback_policy: options.playback_policy || 'public',
-      new_asset_settings: options.new_asset_settings || {
-        playbook_policy: 'public'
-      },
-      reconnect_window: options.reconnect_window || 60,
-      max_continuous_duration: options.max_continuous_duration || 43200 // 12 hours
+    const response = await mux.video.liveStreams.create({
+      playback_policy: [options.playback_policy],
+      new_asset_settings: options.new_asset_settings
     })
 
     return {
-      id: liveStream.id || '',
-      stream_key: liveStream.stream_key || '',
-      playback_ids: liveStream.playback_ids || [],
-      status: liveStream.status || 'idle',
-      created_at: liveStream.created_at || '',
-      reconnect_window: liveStream.reconnect_window || 60,
-      max_continuous_duration: liveStream.max_continuous_duration || 43200
+      id: response.id || '',
+      stream_key: response.stream_key || '',
+      playback_ids: response.playback_ids || [],
+      status: response.status as 'idle' | 'active' || 'idle',
+      created_at: response.created_at || new Date().toISOString()
     }
   } catch (error) {
     console.error('Error creating Mux live stream:', error)
@@ -56,23 +57,17 @@ export async function createLiveStream(options: CreateLiveStreamOptions = {}): P
 
 export async function getLiveStream(streamId: string): Promise<MuxLiveStream | null> {
   try {
-    const liveStream = await mux.video.liveStreams.retrieve(streamId)
-    
-    if (!liveStream) {
-      return null
-    }
+    const response = await mux.video.liveStreams.retrieve(streamId)
 
     return {
-      id: liveStream.id || '',
-      stream_key: liveStream.stream_key || '',
-      playback_ids: liveStream.playback_ids || [],
-      status: liveStream.status || 'idle',
-      created_at: liveStream.created_at || '',
-      reconnect_window: liveStream.reconnect_window || 60,
-      max_continuous_duration: liveStream.max_continuous_duration || 43200
+      id: response.id || '',
+      stream_key: response.stream_key || '',
+      playback_ids: response.playback_ids || [],
+      status: response.status as 'idle' | 'active' || 'idle',
+      created_at: response.created_at || new Date().toISOString()
     }
   } catch (error) {
-    console.error('Error fetching Mux live stream:', error)
+    console.error('Error retrieving Mux live stream:', error)
     return null
   }
 }
@@ -87,54 +82,80 @@ export async function deleteLiveStream(streamId: string): Promise<boolean> {
   }
 }
 
-export async function getPlaybackUrl(playbackId: string): Promise<string> {
+export async function getAsset(assetId: string): Promise<MuxAsset | null> {
+  try {
+    const response = await mux.video.assets.retrieve(assetId)
+
+    return {
+      id: response.id || '',
+      status: response.status as 'preparing' | 'ready' | 'errored' || 'preparing',
+      playback_ids: response.playback_ids || [],
+      duration: response.duration,
+      created_at: response.created_at || new Date().toISOString()
+    }
+  } catch (error) {
+    console.error('Error retrieving Mux asset:', error)
+    return null
+  }
+}
+
+export async function createAssetFromLiveStream(liveStreamId: string): Promise<MuxAsset | null> {
+  try {
+    const response = await mux.video.assets.create({
+      input: [{ url: `mux://live-streams/${liveStreamId}` }],
+      playback_policy: ['public']
+    })
+
+    return {
+      id: response.id || '',
+      status: response.status as 'preparing' | 'ready' | 'errored' || 'preparing',
+      playback_ids: response.playback_ids || [],
+      duration: response.duration,
+      created_at: response.created_at || new Date().toISOString()
+    }
+  } catch (error) {
+    console.error('Error creating asset from live stream:', error)
+    return null
+  }
+}
+
+export function getPlaybackUrl(playbackId: string): string {
   return `https://stream.mux.com/${playbackId}.m3u8`
 }
 
-export async function createSignedPlaybackUrl(playbackId: string, expiresIn: number = 3600): Promise<string> {
-  try {
-    const signedUrl = await mux.video.signingKeys.signPlaybackId(playbackId, {
-      expires_in: expiresIn
-    })
-    return signedUrl
-  } catch (error) {
-    console.error('Error creating signed playback URL:', error)
-    return getPlaybackUrl(playbackId) // Fallback to regular URL
-  }
-}
-
-// Helper function to get the primary playback ID
-export function getPrimaryPlaybackId(liveStream: MuxLiveStream): string | null {
-  const playbackIds = liveStream.playback_ids
-  if (!playbackIds || playbackIds.length === 0) {
-    return null
-  }
+export function getThumbnailUrl(playbackId: string, options: {
+  width?: number
+  height?: number
+  fit_mode?: 'preserve' | 'crop' | 'pad'
+  time?: number
+} = {}): string {
+  const params = new URLSearchParams()
   
-  // Return the first playback ID
-  return playbackIds[0]?.id || null
+  if (options.width) params.set('width', options.width.toString())
+  if (options.height) params.set('height', options.height.toString())
+  if (options.fit_mode) params.set('fit_mode', options.fit_mode)
+  if (options.time !== undefined) params.set('time', options.time.toString())
+
+  const queryString = params.toString()
+  return `https://image.mux.com/${playbackId}/thumbnail.jpg${queryString ? `?${queryString}` : ''}`
 }
 
-// Helper function to check if stream is active
-export function isStreamActive(liveStream: MuxLiveStream): boolean {
-  return liveStream.status === 'active'
-}
-
-// Helper function to get stream status display text
-export function getStreamStatusDisplay(status: string): string {
-  const statusMap: Record<string, string> = {
-    'idle': 'Ready to Stream',
-    'active': 'Live',
-    'disabled': 'Disabled'
+export function isValidPlaybackId(playbackId: string): boolean {
+  if (!playbackId || typeof playbackId !== 'string') {
+    return false
   }
-  return statusMap[status] || status
+
+  // Mux playback IDs are typically alphanumeric strings
+  return /^[a-zA-Z0-9]+$/.test(playbackId) && playbackId.length > 10
 }
 
-// Helper function to get stream status color
-export function getStreamStatusColor(status: string): string {
-  const colorMap: Record<string, string> = {
-    'idle': 'text-yellow-500',
-    'active': 'text-red-500',
-    'disabled': 'text-gray-500'
+export function parseWebhookSignature(signature: string, secret: string, body: string): boolean {
+  try {
+    // Mux webhook signature verification logic would go here
+    // This is a simplified version - in production you'd use the actual Mux webhook verification
+    return signature.includes('mux-signature')
+  } catch (error) {
+    console.error('Error parsing webhook signature:', error)
+    return false
   }
-  return colorMap[status] || 'text-gray-500'
 }

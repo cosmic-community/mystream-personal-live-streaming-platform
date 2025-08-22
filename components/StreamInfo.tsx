@@ -1,6 +1,8 @@
-import { format } from 'date-fns'
+'use client'
+
+import { Calendar, Clock, Eye, Tag, Settings, Share2, Link as LinkIcon } from 'lucide-react'
 import type { StreamSession, AccessPermission } from '@/types'
-import { Calendar, Users, Shield, Clock } from 'lucide-react'
+import { useState } from 'react'
 
 interface StreamInfoProps {
   stream: StreamSession
@@ -9,148 +11,237 @@ interface StreamInfoProps {
 }
 
 export default function StreamInfo({ stream, viewerName, permissions }: StreamInfoProps) {
-  const status = stream.metadata?.status?.key || 'unknown'
-  const statusLabel = stream.metadata?.status?.value || 'Unknown'
-  const viewerCount = stream.metadata?.viewer_count || 0
-  const startTime = stream.metadata?.start_time
-  const quality = stream.metadata?.stream_quality?.value
+  const [showShareMenu, setShowShareMenu] = useState(false)
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'Not set'
+    return new Date(dateString).toLocaleString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'live':
-        return 'text-red-500'
+        return 'text-red-500 bg-red-50 border-red-200'
       case 'scheduled':
-        return 'text-yellow-500'
+        return 'text-yellow-500 bg-yellow-50 border-yellow-200'
       case 'ended':
-        return 'text-gray-500'
+        return 'text-gray-500 bg-gray-50 border-gray-200'
       case 'private':
-        return 'text-purple-500'
+        return 'text-purple-500 bg-purple-50 border-purple-200'
       default:
-        return 'text-gray-400'
-    }
-  }
-
-  const getPermissionLabel = (permission: AccessPermission) => {
-    switch (permission) {
-      case 'view-only':
-        return 'Viewer'
-      case 'chat':
-        return 'Participant'
-      case 'moderator':
-        return 'Moderator'
-      default:
-        return 'Guest'
+        return 'text-gray-500 bg-gray-50 border-gray-200'
     }
   }
 
   const getPermissionColor = (permission: AccessPermission) => {
     switch (permission) {
-      case 'view-only':
-        return 'bg-gray-100 text-gray-800'
-      case 'chat':
-        return 'bg-blue-100 text-blue-800'
       case 'moderator':
-        return 'bg-purple-100 text-purple-800'
+        return 'text-red-600 bg-red-50 border-red-200'
+      case 'chat':
+        return 'text-green-600 bg-green-50 border-green-200'
+      case 'view-only':
       default:
-        return 'bg-gray-100 text-gray-800'
+        return 'text-blue-600 bg-blue-50 border-blue-200'
     }
   }
 
+  const getPermissionLabel = (permission: AccessPermission) => {
+    switch (permission) {
+      case 'moderator':
+        return 'Moderator'
+      case 'chat':
+        return 'Viewer + Chat'
+      case 'view-only':
+      default:
+        return 'View Only'
+    }
+  }
+
+  const shareUrl = () => {
+    if (typeof window !== 'undefined') {
+      navigator.clipboard.writeText(window.location.href)
+      alert('Stream link copied to clipboard!')
+    }
+  }
+
+  const tags = stream.metadata?.tags ? stream.metadata.tags.split(',').map(tag => tag.trim()).filter(Boolean) : []
+
   return (
-    <div className="bg-gray-800 rounded-lg p-6 mb-6 border border-gray-700">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Stream Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-2xl font-bold text-white truncate">
+    <div className="bg-card rounded-lg border shadow-sm">
+      <div className="p-6">
+        {/* Stream Title and Status */}
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <h1 className="text-2xl font-bold text-foreground mb-2">
               {stream.metadata?.stream_title || stream.title}
             </h1>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              status === 'live' ? 'bg-red-500 text-white' :
-              status === 'scheduled' ? 'bg-yellow-500 text-white' :
-              status === 'ended' ? 'bg-gray-500 text-white' :
-              status === 'private' ? 'bg-purple-500 text-white' :
-              'bg-gray-400 text-white'
-            }`}>
-              {status === 'live' && (
-                <span className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                  {statusLabel}
-                </span>
-              )}
-              {status !== 'live' && statusLabel}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-300">
-            {/* Viewer Count */}
-            <div className="flex items-center gap-1">
-              <Users className="h-4 w-4" />
-              <span>{viewerCount} viewer{viewerCount !== 1 ? 's' : ''}</span>
-            </div>
-
-            {/* Stream Quality */}
-            {quality && (
-              <div className="flex items-center gap-1">
-                <div className="w-4 h-4 bg-blue-500 rounded text-white text-xs flex items-center justify-center font-bold">
-                  HD
+            
+            <div className="flex items-center space-x-3">
+              <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-medium border ${getStatusColor(stream.metadata?.status?.key || 'scheduled')}`}>
+                {stream.metadata?.status?.value || 'Scheduled'}
+              </span>
+              
+              <span className={`inline-flex items-center px-2.5 py-1.5 rounded-full text-xs font-medium border ${getPermissionColor(permissions)}`}>
+                {getPermissionLabel(permissions)}
+              </span>
+              
+              {stream.metadata?.viewer_count !== undefined && (
+                <div className="flex items-center text-sm text-muted-foreground">
+                  <Eye className="h-4 w-4 mr-1" />
+                  <span>{stream.metadata.viewer_count} viewers</span>
                 </div>
-                <span>{quality}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex items-center space-x-2 ml-4">
+            <div className="relative">
+              <button 
+                onClick={() => setShowShareMenu(!showShareMenu)}
+                className="btn-secondary p-2"
+                title="Share stream"
+              >
+                <Share2 className="h-4 w-4" />
+              </button>
+              
+              {showShareMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-popover border rounded-md shadow-lg z-10">
+                  <div className="py-1">
+                    <button 
+                      onClick={shareUrl}
+                      className="flex items-center w-full px-4 py-2 text-sm text-popover-foreground hover:bg-accent"
+                    >
+                      <LinkIcon className="h-4 w-4 mr-2" />
+                      Copy link
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {permissions === 'moderator' && (
+              <button className="btn-secondary p-2" title="Stream settings">
+                <Settings className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Stream Description */}
+        {stream.metadata?.description && (
+          <div className="mb-6">
+            <div 
+              className="text-muted-foreground prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: stream.metadata.description }}
+            />
+          </div>
+        )}
+
+        {/* Stream Details */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {/* Timing Information */}
+          <div className="space-y-3">
+            {stream.metadata?.start_time && (
+              <div className="flex items-center text-sm">
+                <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+                <div>
+                  <span className="text-muted-foreground">Start time:</span>
+                  <span className="ml-2 font-medium">{formatDate(stream.metadata.start_time)}</span>
+                </div>
               </div>
             )}
-
-            {/* Start Time */}
-            {startTime && (
-              <div className="flex items-center gap-1">
-                <Calendar className="h-4 w-4" />
-                <span>
-                  {status === 'scheduled' ? 'Starts' : status === 'live' ? 'Started' : 'Ended'}{' '}
-                  {format(new Date(startTime), 'MMM d, h:mm a')}
-                </span>
+            
+            {stream.metadata?.end_time && (
+              <div className="flex items-center text-sm">
+                <Clock className="h-4 w-4 mr-2 text-muted-foreground" />
+                <div>
+                  <span className="text-muted-foreground">End time:</span>
+                  <span className="ml-2 font-medium">{formatDate(stream.metadata.end_time)}</span>
+                </div>
               </div>
             )}
+            
+            {stream.metadata?.stream_quality?.value && (
+              <div className="flex items-center text-sm">
+                <Settings className="h-4 w-4 mr-2 text-muted-foreground" />
+                <div>
+                  <span className="text-muted-foreground">Quality:</span>
+                  <span className="ml-2 font-medium">{stream.metadata.stream_quality.value}</span>
+                </div>
+              </div>
+            )}
+          </div>
 
-            {/* Duration (if ended) */}
-            {status === 'ended' && stream.metadata?.end_time && startTime && (
-              <div className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                <span>
-                  Duration: {Math.round(
-                    (new Date(stream.metadata.end_time).getTime() - new Date(startTime).getTime()) / (1000 * 60)
-                  )} min
-                </span>
+          {/* Additional Information */}
+          <div className="space-y-3">
+            <div className="flex items-center text-sm">
+              <Eye className="h-4 w-4 mr-2 text-muted-foreground" />
+              <div>
+                <span className="text-muted-foreground">Your access:</span>
+                <span className="ml-2 font-medium">{viewerName}</span>
+              </div>
+            </div>
+            
+            {stream.metadata?.chat_enabled !== undefined && (
+              <div className="flex items-center text-sm">
+                <div className={`w-2 h-2 rounded-full mr-2 ${stream.metadata.chat_enabled ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                <div>
+                  <span className="text-muted-foreground">Chat:</span>
+                  <span className="ml-2 font-medium">
+                    {stream.metadata.chat_enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Viewer Info */}
-        <div className="flex flex-col md:items-end gap-2">
-          <div className="text-white">
-            Welcome, <span className="font-semibold">{viewerName}</span>
+        {/* Tags */}
+        {tags.length > 0 && (
+          <div className="border-t pt-4">
+            <div className="flex items-start space-x-2">
+              <Tag className="h-4 w-4 mt-1 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((tag, index) => (
+                    <span 
+                      key={index}
+                      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-secondary text-secondary-foreground"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-gray-400" />
-            <span className={`permission-badge ${getPermissionColor(permissions)}`}>
-              {getPermissionLabel(permissions)}
-            </span>
+        )}
+
+        {/* Recording Notice */}
+        {stream.metadata?.recording_url && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-blue-800">
+              This stream was recorded.{' '}
+              <a 
+                href={stream.metadata.recording_url} 
+                className="font-medium underline hover:no-underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Watch recording
+              </a>
+            </p>
           </div>
-        </div>
+        )}
       </div>
-
-      {/* Stream Tags */}
-      {stream.metadata?.tags && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {stream.metadata.tags.split(',').map((tag, index) => (
-            <span
-              key={index}
-              className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full"
-            >
-              #{tag.trim()}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
