@@ -111,7 +111,7 @@ export async function getLiveStream(liveStreamId: string): Promise<MuxLiveStream
 // Delete a live stream
 export async function deleteLiveStream(liveStreamId: string): Promise<boolean> {
   try {
-    await mux.video.liveStreams.del(liveStreamId)
+    await mux.video.liveStreams.delete(liveStreamId)
     return true
   } catch (error) {
     console.error('Error deleting MUX live stream:', error)
@@ -156,7 +156,7 @@ export async function createAssetFromLiveStream(liveStreamId: string): Promise<M
           url: `mux://live-streams/${liveStreamId}`
         }
       ],
-      playback_policy: ['public']
+      playbook_policy: ['public']
     })
 
     return {
@@ -187,7 +187,7 @@ export async function getAsset(assetId: string): Promise<MuxAssetResponse | null
     return {
       id: asset.id || '',
       status: asset.status || '',
-      playback_ids: asset.playback_ids?.map(pid => ({
+      playbook_ids: asset.playback_ids?.map(pid => ({
         id: pid.id || '',
         policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
       })) || [],
