@@ -1,140 +1,134 @@
-import { Clock, Users, Eye } from 'lucide-react'
-import { format, formatDistanceToNow } from 'date-fns'
+'use client'
+
+import { formatDistanceToNow } from 'date-fns'
+import { Calendar, Clock, Eye, Play, Settings, ExternalLink } from 'lucide-react'
+import Link from 'next/link'
 import type { StreamSession } from '@/types'
 
-export interface StreamCardProps {
-  stream: StreamSession;
-  onEdit?: (stream: StreamSession) => void;
-  className?: string;
-  showActions?: boolean;
+interface StreamCardProps {
+  stream: StreamSession
+  onEdit?: (stream: StreamSession) => void
+  className?: string
 }
 
-export default function StreamCard({ stream, onEdit, className = '', showActions = false }: StreamCardProps) {
-  if (!stream || !stream.metadata) {
-    return null
-  }
-
-  const status = stream.metadata.status?.key || 'scheduled'
-  const statusDisplay = stream.metadata.status?.value || 'Scheduled'
-  const thumbnailUrl = stream.metadata.thumbnail?.imgix_url
-  const startTime = stream.metadata.start_time
-  const viewerCount = stream.metadata.viewer_count || 0
-
+export default function StreamCard({ stream, onEdit, className = '' }: StreamCardProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'live': return 'bg-red-500'
-      case 'scheduled': return 'bg-yellow-500'
-      case 'ended': return 'bg-gray-500'
-      case 'private': return 'bg-purple-500'
-      default: return 'bg-gray-500'
+      case 'live':
+        return 'bg-red-500 text-white'
+      case 'scheduled':
+        return 'bg-yellow-500 text-white'
+      case 'ended':
+        return 'bg-gray-500 text-white'
+      case 'private':
+        return 'bg-purple-500 text-white'
+      default:
+        return 'bg-gray-500 text-white'
     }
   }
 
-  const getStatusTextColor = (status: string) => {
-    switch (status) {
-      case 'live': return 'text-red-600 dark:text-red-400'
-      case 'scheduled': return 'text-yellow-600 dark:text-yellow-400'
-      case 'ended': return 'text-gray-600 dark:text-gray-400'
-      case 'private': return 'text-purple-600 dark:text-purple-400'
-      default: return 'text-gray-600 dark:text-gray-400'
+  const getStatusDisplay = (stream: StreamSession) => {
+    return stream.metadata?.status?.value || 'Scheduled'
+  }
+
+  const getStatusKey = (stream: StreamSession) => {
+    return stream.metadata?.status?.key || 'scheduled'
+  }
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'Not set'
+    try {
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true })
+    } catch (error) {
+      return 'Invalid date'
     }
   }
+
+  const getThumbnailUrl = (stream: StreamSession) => {
+    return stream.metadata?.thumbnail?.imgix_url || 
+           stream.metadata?.thumbnail?.url || 
+           '/placeholder-stream.jpg'
+  }
+
+  const isLive = getStatusKey(stream) === 'live'
+  const thumbnailUrl = getThumbnailUrl(stream)
 
   return (
-    <div className={`bg-card border rounded-lg overflow-hidden hover:shadow-lg transition-shadow ${className}`}>
+    <div className={`bg-card rounded-lg border shadow-sm overflow-hidden transition-shadow hover:shadow-md ${className}`}>
       {/* Thumbnail */}
-      <div className="relative aspect-video bg-gray-100 dark:bg-gray-800">
-        {thumbnailUrl ? (
-          <img 
-            src={`${thumbnailUrl}?w=800&h=450&fit=crop&auto=format,compress`}
-            alt={stream.metadata.stream_title || stream.title}
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="text-4xl">🎥</div>
-          </div>
-        )}
+      <div className="relative aspect-video bg-muted">
+        <img
+          src={`${thumbnailUrl}?w=600&h=338&fit=crop&auto=format,compress`}
+          alt={stream.metadata?.stream_title || stream.title}
+          className="w-full h-full object-cover"
+        />
         
         {/* Status Badge */}
-        <div className="absolute top-3 right-3">
-          <div className={`px-2 py-1 rounded-full text-xs font-medium text-white ${getStatusColor(status)}`}>
-            {statusDisplay}
-          </div>
+        <div className={`absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getStatusKey(stream))}`}>
+          {isLive && <span className="inline-block w-2 h-2 bg-white rounded-full mr-1 animate-pulse"></span>}
+          {getStatusDisplay(stream)}
         </div>
 
-        {/* Live Indicator */}
-        {status === 'live' && (
-          <div className="absolute top-3 left-3">
-            <div className="flex items-center space-x-1 bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
-              <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>
-              <span>LIVE</span>
-            </div>
+        {/* View Count */}
+        {stream.metadata?.viewer_count !== undefined && (
+          <div className="absolute top-2 right-2 bg-black/50 text-white px-2 py-1 rounded-full text-xs flex items-center">
+            <Eye className="h-3 w-3 mr-1" />
+            {stream.metadata.viewer_count}
           </div>
         )}
+
+        {/* Play Button Overlay */}
+        <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+          <Play className="h-12 w-12 text-white" fill="currentColor" />
+        </div>
       </div>
 
       {/* Content */}
       <div className="p-4">
+        {/* Title */}
         <h3 className="font-semibold text-foreground mb-2 line-clamp-2">
-          {stream.metadata.stream_title || stream.title}
+          {stream.metadata?.stream_title || stream.title}
         </h3>
 
         {/* Description */}
-        {stream.metadata.description && (
+        {stream.metadata?.description && (
           <div 
             className="text-sm text-muted-foreground mb-3 line-clamp-2"
             dangerouslySetInnerHTML={{ 
-              __html: stream.metadata.description.replace(/<[^>]*>/g, '').substring(0, 100) 
+              __html: stream.metadata.description.replace(/<[^>]*>/g, '') 
             }}
           />
         )}
 
-        {/* Metadata */}
-        <div className="flex items-center justify-between text-sm text-muted-foreground mb-3">
-          <div className="flex items-center space-x-4">
-            {/* Viewer Count */}
-            <div className="flex items-center space-x-1">
-              <Users className="h-4 w-4" />
-              <span>{viewerCount}</span>
+        {/* Stream Details */}
+        <div className="space-y-2 mb-4 text-xs text-muted-foreground">
+          {stream.metadata?.start_time && (
+            <div className="flex items-center">
+              <Calendar className="h-3 w-3 mr-2" />
+              <span>Starts {formatDate(stream.metadata.start_time)}</span>
             </div>
-
-            {/* Quality */}
-            {stream.metadata.stream_quality?.value && (
-              <div className="flex items-center space-x-1">
-                <Eye className="h-4 w-4" />
-                <span>{stream.metadata.stream_quality.value}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Status */}
-          <div className={`font-medium ${getStatusTextColor(status)}`}>
-            {statusDisplay}
-          </div>
-        </div>
-
-        {/* Timing */}
-        <div className="flex items-center space-x-1 text-xs text-muted-foreground mb-3">
-          <Clock className="h-3 w-3" />
-          {status === 'scheduled' && startTime ? (
-            <span>Starts {format(new Date(startTime), 'MMM d, yyyy • h:mm a')}</span>
-          ) : status === 'live' ? (
-            <span>Started {formatDistanceToNow(new Date(stream.created_at))} ago</span>
-          ) : status === 'ended' ? (
-            <span>Ended {formatDistanceToNow(new Date(stream.modified_at))} ago</span>
-          ) : (
-            <span>Created {formatDistanceToNow(new Date(stream.created_at))} ago</span>
           )}
+
+          {stream.metadata?.stream_quality?.value && (
+            <div className="flex items-center">
+              <Settings className="h-3 w-3 mr-2" />
+              <span>{stream.metadata.stream_quality.value}</span>
+            </div>
+          )}
+
+          <div className="flex items-center">
+            <Clock className="h-3 w-3 mr-2" />
+            <span>Created {formatDate(stream.created_at)}</span>
+          </div>
         </div>
 
         {/* Tags */}
-        {stream.metadata.tags && (
-          <div className="flex flex-wrap gap-1 mb-3">
+        {stream.metadata?.tags && (
+          <div className="flex flex-wrap gap-1 mb-4">
             {stream.metadata.tags.split(',').slice(0, 3).map((tag, index) => (
               <span 
                 key={index}
-                className="px-2 py-1 bg-muted text-muted-foreground text-xs rounded"
+                className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-secondary text-secondary-foreground"
               >
                 {tag.trim()}
               </span>
@@ -143,16 +137,34 @@ export default function StreamCard({ stream, onEdit, className = '', showActions
         )}
 
         {/* Actions */}
-        {showActions && onEdit && (
-          <div className="flex space-x-2 pt-2 border-t">
+        <div className="flex items-center justify-between pt-2 border-t">
+          <div className="flex items-center space-x-2">
+            <Link
+              href={`/admin/streams/${stream.slug}`}
+              className="btn-primary text-xs py-1.5 px-3"
+            >
+              View Details
+            </Link>
+            
+            <Link
+              href={`/admin/streams/${stream.slug}/access-links`}
+              className="btn-secondary text-xs py-1.5 px-3"
+            >
+              <ExternalLink className="h-3 w-3 mr-1" />
+              Links
+            </Link>
+          </div>
+
+          {onEdit && (
             <button
               onClick={() => onEdit(stream)}
-              className="flex-1 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 rounded transition-colors"
+              className="btn-secondary p-1.5"
+              title="Edit stream"
             >
-              Edit Stream
+              <Settings className="h-3 w-3" />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

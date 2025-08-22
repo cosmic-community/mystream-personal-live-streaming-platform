@@ -1,215 +1,214 @@
 import { NextRequest } from 'next/server'
+import { createHash } from 'crypto'
 
-// Simple rate limiting store (in production, use Redis or similar)
+// Rate limiting store (in production, use Redis or similar)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 
-// Clean up old entries periodically
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, data] of rateLimitStore.entries()) {
-    if (data.resetTime < now) {
-      rateLimitStore.delete(key)
-    }
-  }
-}, 60000) // Clean up every minute
-
+// User identifier for rate limiting
 export function getUserIdentifier(request: NextRequest): string {
-  // Get client IP address
   const forwarded = request.headers.get('x-forwarded-for')
-  const ip = forwarded?.split(',')[0]?.trim() || 
-             request.headers.get('x-real-ip') || 
-             'unknown'
-  
-  // In a real app, you might also include user ID or session ID
-  return ip
+  const ip = forwarded?.split(', ')[0] || request.ip || 'unknown'
+  return createHash('sha256').update(ip).digest('hex').substring(0, 16)
 }
 
+// Rate limiting check
 export function checkRateLimit(
-  identifier: string,
-  maxRequests: number,
+  identifier: string, 
+  maxRequests: number, 
   windowMs: number
 ): boolean {
   const now = Date.now()
-  const windowStart = now - windowMs
+  const key = `${identifier}:${Math.floor(now / windowMs)}`
   
-  const current = rateLimitStore.get(identifier)
+  const current = rateLimitStore.get(key)
   
-  if (!current || current.resetTime < now) {
-    // First request or window has reset
-    rateLimitStore.set(identifier, {
-      count: 1,
-      resetTime: now + windowMs
-    })
+  if (!current) {
+    rateLimitStore.set(key, { count: 1, resetTime: now + windowMs })
     return true
   }
   
   if (current.count >= maxRequests) {
-    return false // Rate limit exceeded
+    return false
   }
   
-  // Increment counter
   current.count++
-  rateLimitStore.set(identifier, current)
   return true
 }
 
-export function generateSecureToken(): string {
+// Clean up expired rate limit entries
+export function cleanupRateLimit(): void {
+  const now = Date.now()
+  for (const [key, value] of rateLimitStore) {
+    if (now > value.resetTime) {
+      rateLimitStore.delete(key)
+    }
+  }
+}
+
+// Basic authentication check for admin routes
+export function checkAdminAuth(request: NextRequest): boolean {
+  const authHeader = request.headers.get('authorization')
+  if (!authHeader) return false
+  
+  const token = authHeader.replace('Bearer ', '')
+  const adminToken = process.env.ADMIN_TOKEN
+  
+  if (!adminToken) {
+    console.warn('ADMIN_TOKEN not configured')
+    return false
+  }
+  
+  return token === adminToken
+}
+
+// Generate secure access token
+export function generateSecureToken(length: number = 32): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
   let result = ''
   
-  // Use crypto.getRandomValues if available, otherwise fallback to Math.random
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    const array = new Uint8Array(32)
-    crypto.getRandomValues(array)
-    
-    for (let i = 0; i < array.length; i++) {
-      result += chars[array[i] % chars.length]
-    }
-  } else {
-    // Fallback for environments without crypto.getRandomValues
-    for (let i = 0; i < 32; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)]
-    }
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length))
   }
   
-  return `tkn_${result}`
+  return result
 }
 
-export function validateAccessToken(token: string): boolean {
-  if (!token || typeof token !== 'string') {
-    return false
+// Validate access token format
+export function validateTokenFormat(token: string): boolean {
+  if (!token || typeof token !== 'string') return false
+  
+  // Check if token starts with expected prefix
+  if (token.startsWith('tkn_')) {
+    return token.length >= 36 && /^tkn_[A-Za-z0-9]+$/.test(token)
   }
   
-  // Token should start with 'tkn_' and be followed by 32 characters
-  const tokenRegex = /^tkn_[A-Za-z0-9]{32}$/
-  return tokenRegex.test(token)
+  // Allow other token formats for backward compatibility
+  return token.length >= 16 && /^[A-Za-z0-9_-]+$/.test(token)
 }
 
-export function sanitizeInput(input: string, maxLength: number = 500): string {
-  if (!input || typeof input !== 'string') {
-    return ''
-  }
-  
-  return input
-    .trim()
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
-    .replace(/<[^>]*>/g, '') // Remove HTML tags
-    .substring(0, maxLength)
-}
-
-export function isValidEmail(email: string): boolean {
-  if (!email || typeof email !== 'string') {
-    return false
-  }
-  
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email) && email.length <= 254
-}
-
-export function isValidUrl(url: string): boolean {
-  if (!url || typeof url !== 'string') {
-    return false
-  }
-  
-  try {
-    new URL(url)
-    return true
-  } catch {
-    return false
-  }
-}
-
-// Permission checking utilities
-export type Permission = 'view-only' | 'chat' | 'moderator'
-
-export function hasPermission(userPermission: Permission, requiredPermission: Permission): boolean {
-  const permissionLevels = {
-    'view-only': 0,
-    'chat': 1,
-    'moderator': 2
-  }
-  
-  const userLevel = permissionLevels[userPermission] ?? 0
-  const requiredLevel = permissionLevels[requiredPermission] ?? 0
-  
-  return userLevel >= requiredLevel
-}
-
-export function canModerateChat(permission: Permission): boolean {
-  return permission === 'moderator'
-}
-
-export function canSendChat(permission: Permission): boolean {
-  return permission === 'chat' || permission === 'moderator'
-}
-
-// Basic session management (extend this for production use)
-export interface SessionData {
+// Session management (simplified for demo)
+interface UserSession {
+  id: string
   viewerName: string
-  permission: Permission
-  streamId: string
-  lastActivity: number
+  permissions: string
+  streamId?: string
+  createdAt: number
+  expiresAt: number
 }
 
-const sessionStore = new Map<string, SessionData>()
+const sessionStore = new Map<string, UserSession>()
 
-export function createViewerSession(data: Omit<SessionData, 'lastActivity'>): string {
+export function createUserSession(
+  viewerName: string, 
+  permissions: string, 
+  streamId?: string
+): string {
   const sessionId = generateSecureToken()
-  sessionStore.set(sessionId, {
-    ...data,
-    lastActivity: Date.now()
-  })
+  const now = Date.now()
+  const session: UserSession = {
+    id: sessionId,
+    viewerName,
+    permissions,
+    streamId,
+    createdAt: now,
+    expiresAt: now + (24 * 60 * 60 * 1000) // 24 hours
+  }
+  
+  sessionStore.set(sessionId, session)
   return sessionId
 }
 
-export function getViewerSession(sessionId: string): SessionData | null {
+export function getUserSession(sessionId: string): UserSession | null {
   const session = sessionStore.get(sessionId)
+  
+  // Add null check to fix TS2532 error
   if (!session) {
     return null
   }
   
-  // Check if session has expired (24 hours)
-  const maxAge = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
-  if (Date.now() - session.lastActivity > maxAge) {
+  // Check if session has expired
+  if (Date.now() > session.expiresAt) {
     sessionStore.delete(sessionId)
     return null
   }
   
-  // Update last activity
-  session.lastActivity = Date.now()
-  sessionStore.set(sessionId, session)
-  
   return session
 }
 
-export function updateViewerSession(sessionId: string, updates: Partial<SessionData>): boolean {
+export function updateUserSession(sessionId: string, updates: Partial<UserSession>): boolean {
   const session = sessionStore.get(sessionId)
-  if (!session) {
+  
+  if (!session || Date.now() > session.expiresAt) {
     return false
   }
   
-  const updatedSession = {
-    ...session,
-    ...updates,
-    lastActivity: Date.now()
-  }
-  
-  sessionStore.set(sessionId, updatedSession)
+  Object.assign(session, updates)
   return true
 }
 
-export function deleteViewerSession(sessionId: string): boolean {
-  return sessionStore.delete(sessionId)
+export function deleteUserSession(sessionId: string): void {
+  sessionStore.delete(sessionId)
 }
 
-// Clean up expired sessions periodically
-setInterval(() => {
+// Clean up expired sessions
+export function cleanupExpiredSessions(): void {
   const now = Date.now()
-  const maxAge = 24 * 60 * 60 * 1000 // 24 hours
-  
-  for (const [sessionId, session] of sessionStore.entries()) {
-    if (now - session.lastActivity > maxAge) {
+  for (const [sessionId, session] of sessionStore) {
+    if (now > session.expiresAt) {
       sessionStore.delete(sessionId)
     }
   }
-}, 60 * 60 * 1000) // Clean up every hour
+}
+
+// Utility to get session from request
+export function getSessionFromRequest(request: NextRequest): UserSession | null {
+  const sessionId = request.cookies.get('session_id')?.value
+  if (!sessionId) return null
+  
+  return getUserSession(sessionId)
+}
+
+// Input sanitization
+export function sanitizeInput(input: string): string {
+  return input
+    .trim()
+    .replace(/[<>]/g, '') // Remove potential HTML tags
+    .substring(0, 1000) // Limit length
+}
+
+// Validate viewer name
+export function validateViewerName(name: string): boolean {
+  if (!name || typeof name !== 'string') return false
+  
+  const trimmed = name.trim()
+  return (
+    trimmed.length >= 2 && 
+    trimmed.length <= 50 && 
+    /^[a-zA-Z0-9_\-\s]+$/.test(trimmed)
+  )
+}
+
+// Access permission helpers
+export function hasViewPermission(permissions: string): boolean {
+  return ['view-only', 'chat', 'moderator'].includes(permissions)
+}
+
+export function hasChatPermission(permissions: string): boolean {
+  return ['chat', 'moderator'].includes(permissions)
+}
+
+export function hasModeratorPermission(permissions: string): boolean {
+  return permissions === 'moderator'
+}
+
+// Setup periodic cleanup (run every hour)
+if (typeof global !== 'undefined' && !global.authCleanupInterval) {
+  global.authCleanupInterval = setInterval(() => {
+    cleanupRateLimit()
+    cleanupExpiredSessions()
+  }, 60 * 60 * 1000) // 1 hour
+}
+
+declare global {
+  var authCleanupInterval: NodeJS.Timeout | undefined
+}
