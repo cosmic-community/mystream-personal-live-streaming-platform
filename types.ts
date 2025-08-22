@@ -107,7 +107,16 @@ export interface CosmicResponse<T> {
   skip?: number;
 }
 
-// Component prop types - FIXED: Added missing showActions property
+// Component prop types - FIXED: Added missing color and showActions properties
+export interface StatsCardProps {
+  title: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color?: string;
+  trend?: 'up' | 'down' | 'neutral';
+  className?: string;
+}
+
 export interface StreamCardProps {
   stream: StreamSession;
   onEdit?: (stream: StreamSession) => void;
@@ -152,7 +161,9 @@ export interface MuxPlaybackId {
   policy: 'public' | 'signed';
 }
 
+// FIXED: Exported MuxLiveStreamCreateParams interface
 export interface MuxLiveStreamCreateParams {
+  playback_policy?: ('public' | 'signed')[];
   reconnect_window?: number;
   reduced_latency?: boolean;
   test?: boolean;
