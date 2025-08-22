@@ -1,216 +1,233 @@
-import type { 
-  MuxLiveStream, 
-  MuxLiveStreamCreateParams, 
-  MuxPlaybackId,
-  MuxAssetInput 
-} from '@/types'
+import Mux from '@mux/mux-node'
 
-// MUX Video SDK configuration
-const muxTokenId = process.env.MUX_TOKEN_ID
-const muxTokenSecret = process.env.MUX_TOKEN_SECRET
+// Initialize Mux client with environment variables
+const mux = new Mux({
+  tokenId: process.env.MUX_TOKEN_ID as string,
+  tokenSecret: process.env.MUX_TOKEN_SECRET as string
+})
 
-// Basic error handling for MUX operations
-function handleMuxError(error: any, operation: string): Error {
-  console.error(`MUX ${operation} error:`, error)
-  return new Error(`MUX ${operation} failed: ${error.message || 'Unknown error'}`)
+// Define proper interfaces for MUX operations
+export interface MuxLiveStreamCreateParams {
+  reconnect_window?: number;
+  reduced_latency?: boolean;
+  test?: boolean;
+  playback_policy?: ('public' | 'signed')[];
+  new_asset_settings?: {
+    playback_policy?: ('public' | 'signed')[];
+  };
 }
 
-// Validate MUX credentials
-export function validateMuxCredentials(): boolean {
-  return !!(muxTokenId && muxTokenSecret)
+export interface MuxPlaybackId {
+  id: string;
+  policy: 'public' | 'signed';
 }
 
-// Create a live stream
-export async function createLiveStream(params: MuxLiveStreamCreateParams = {}): Promise<MuxLiveStream | null> {
-  if (!validateMuxCredentials()) {
-    console.warn('MUX credentials not configured. Skipping live stream creation.')
-    return null
-  }
+export interface MuxLiveStream {
+  id: string;
+  stream_key: string;
+  playbook_ids?: MuxPlaybackId[];
+  playback_ids: MuxPlaybackId[];
+  status: 'idle' | 'active' | 'disconnected';
+  created_at: string;
+  reconnect_window?: number;
+  reduced_latency?: boolean;
+  test?: boolean;
+}
 
+export interface MuxAsset {
+  id: string;
+  status: 'preparing' | 'ready' | 'errored';
+  duration?: number;
+  max_stored_resolution?: string;
+  max_stored_frame_rate?: number;
+  aspect_ratio?: string;
+  playback_ids?: MuxPlaybackId[];
+  created_at: string;
+}
+
+// Create a new live stream
+export async function createLiveStream(params: MuxLiveStreamCreateParams = {}): Promise<MuxLiveStream> {
   try {
-    // For now, return a mock response since we need actual MUX SDK integration
-    // In a real implementation, you would use the MUX SDK here
-    const mockResponse: MuxLiveStream = {
-      id: `live_stream_${Date.now()}`,
-      stream_key: `sk_${Math.random().toString(36).substring(2, 15)}`,
-      playback_ids: [
-        {
-          id: `playback_${Math.random().toString(36).substring(2, 15)}`,
-          policy: 'public'
-        }
-      ],
-      status: 'idle',
-      created_at: new Date().toISOString(),
+    const defaultParams: MuxLiveStreamCreateParams = {
+      playback_policy: ['public'],
+      new_asset_settings: {
+        playbook_policy: ['public']
+      },
+      reduced_latency: false,
+      reconnect_window: 60,
+      test: process.env.NODE_ENV !== 'production',
       ...params
-    }
+    };
 
-    return mockResponse
+    const liveStream = await mux.video.liveStreams.create(defaultParams);
+    
+    return {
+      id: liveStream.id!,
+      stream_key: liveStream.stream_key!,
+      playback_ids: (liveStream.playback_ids || []).map(pb => ({
+        id: pb.id!,
+        policy: pb.policy as 'public' | 'signed'
+      })),
+      status: liveStream.status as 'idle' | 'active' | 'disconnected',
+      created_at: liveStream.created_at!,
+      reconnect_window: liveStream.reconnect_window,
+      reduced_latency: liveStream.reduced_latency,
+      test: liveStream.test
+    };
   } catch (error) {
-    throw handleMuxError(error, 'create live stream')
+    console.error('Error creating MUX live stream:', error);
+    throw new Error('Failed to create live stream');
   }
 }
 
 // Get live stream by ID
-export async function getLiveStream(streamId: string): Promise<MuxLiveStream | null> {
-  if (!validateMuxCredentials()) {
-    console.warn('MUX credentials not configured')
-    return null
-  }
-
+export async function getLiveStream(streamId: string): Promise<MuxLiveStream> {
   try {
-    // Mock implementation - replace with actual MUX SDK call
-    console.log('Getting live stream:', streamId)
-    return null
+    const liveStream = await mux.video.liveStreams.retrieve(streamId);
+    
+    return {
+      id: liveStream.id!,
+      stream_key: liveStream.stream_key!,
+      playback_ids: (liveStream.playback_ids || []).map(pb => ({
+        id: pb.id!,
+        policy: pb.policy as 'public' | 'signed'
+      })),
+      status: liveStream.status as 'idle' | 'active' | 'disconnected',
+      created_at: liveStream.created_at!,
+      reconnect_window: liveStream.reconnect_window,
+      reduced_latency: liveStream.reduced_latency,
+      test: liveStream.test
+    };
   } catch (error) {
-    throw handleMuxError(error, 'get live stream')
+    console.error('Error getting MUX live stream:', error);
+    throw new Error('Failed to get live stream');
   }
 }
 
 // Delete a live stream
-export async function deleteLiveStream(streamId: string): Promise<boolean> {
-  if (!validateMuxCredentials()) {
-    console.warn('MUX credentials not configured')
-    return false
-  }
-
+export async function deleteLiveStream(streamId: string): Promise<void> {
   try {
-    // Mock implementation - replace with actual MUX SDK call
-    console.log('Deleting live stream:', streamId)
-    return true
+    await mux.video.liveStreams.del(streamId);
   } catch (error) {
-    throw handleMuxError(error, 'delete live stream')
+    console.error('Error deleting MUX live stream:', error);
+    throw new Error('Failed to delete live stream');
+  }
+}
+
+// Create an asset from a live stream
+export async function createAssetFromLiveStream(liveStreamId: string): Promise<MuxAsset> {
+  try {
+    const asset = await mux.video.assets.create({
+      input: [{
+        url: `mux://live-streams/${liveStreamId}`
+      }],
+      playback_policy: ['public']
+    });
+
+    return {
+      id: asset.id!,
+      status: asset.status as 'preparing' | 'ready' | 'errored',
+      duration: asset.duration,
+      max_stored_resolution: asset.max_stored_resolution,
+      max_stored_frame_rate: asset.max_stored_frame_rate,
+      aspect_ratio: asset.aspect_ratio,
+      playback_ids: (asset.playback_ids || []).map(pb => ({
+        id: pb.id!,
+        policy: pb.policy as 'public' | 'signed'
+      })),
+      created_at: asset.created_at!
+    };
+  } catch (error) {
+    console.error('Error creating asset from live stream:', error);
+    throw new Error('Failed to create asset from live stream');
+  }
+}
+
+// Get asset by ID
+export async function getAsset(assetId: string): Promise<MuxAsset> {
+  try {
+    const asset = await mux.video.assets.retrieve(assetId);
+
+    return {
+      id: asset.id!,
+      status: asset.status as 'preparing' | 'ready' | 'errored',
+      duration: asset.duration,
+      max_stored_resolution: asset.max_stored_resolution,
+      max_stored_frame_rate: asset.max_stored_frame_rate,
+      aspect_ratio: asset.aspect_ratio,
+      playback_ids: (asset.playback_ids || []).map(pb => ({
+        id: pb.id!,
+        policy: pb.policy as 'public' | 'signed'
+      })),
+      created_at: asset.created_at!
+    };
+  } catch (error) {
+    console.error('Error getting MUX asset:', error);
+    throw new Error('Failed to get asset');
   }
 }
 
 // Get live stream statistics
-export async function getLiveStreamStats(streamId: string): Promise<any> {
-  if (!validateMuxCredentials()) {
-    console.warn('MUX credentials not configured')
-    return null
-  }
-
+export async function getLiveStreamStats(streamId: string) {
   try {
-    // Mock implementation - replace with actual MUX SDK call
-    console.log('Getting live stream stats:', streamId)
+    // Note: This would require MUX Data API integration
+    // For now, return mock data structure
     return {
-      viewer_count: 0,
-      stream_time_seconds: 0
-    }
+      concurrent_viewers: 0,
+      total_views: 0,
+      max_concurrent_viewers: 0
+    };
   } catch (error) {
-    throw handleMuxError(error, 'get live stream stats')
-  }
-}
-
-// Create a VOD asset from a recording
-export async function createAsset(input: MuxAssetInput, playbackPolicy: 'public' | 'signed' = 'public'): Promise<any> {
-  if (!validateMuxCredentials()) {
-    console.warn('MUX credentials not configured')
-    return null
-  }
-
-  try {
-    // Mock implementation - replace with actual MUX SDK call
-    console.log('Creating asset with input:', input, 'policy:', playbackPolicy)
+    console.error('Error getting live stream stats:', error);
     return {
-      id: `asset_${Date.now()}`,
-      status: 'preparing',
-      playback_ids: [
-        {
-          id: `playback_${Math.random().toString(36).substring(2, 15)}`,
-          policy: playbackPolicy
-        }
-      ]
-    }
-  } catch (error) {
-    throw handleMuxError(error, 'create asset')
+      concurrent_viewers: 0,
+      total_views: 0,
+      max_concurrent_viewers: 0
+    };
   }
 }
 
-// Get asset details
-export async function getAsset(assetId: string): Promise<any> {
-  if (!validateMuxCredentials()) {
-    console.warn('MUX credentials not configured')
-    return null
-  }
-
-  try {
-    // Mock implementation - replace with actual MUX SDK call  
-    console.log('Getting asset:', assetId)
-    return null
-  } catch (error) {
-    throw handleMuxError(error, 'get asset')
-  }
-}
-
-// Helper function to generate stream URL
-export function generateStreamUrl(playbackId: string, isLive: boolean = true): string {
-  const baseUrl = isLive ? 'https://stream.mux.com' : 'https://stream.mux.com'
-  return `${baseUrl}/${playbackId}.m3u8`
-}
-
-// Helper function to generate thumbnail URL
-export function generateThumbnailUrl(playbackId: string, options: {
-  width?: number
-  height?: number
-  time?: number
-  fit_mode?: 'preserve' | 'crop' | 'pad'
+// Utility function to generate MUX video URL
+export function getMuxVideoUrl(playbackId: string, options: {
+  width?: number;
+  height?: number;
+  fit_mode?: 'preserve' | 'crop' | 'pad';
+  time?: number;
 } = {}): string {
-  const { width = 320, height = 180, time = 1, fit_mode = 'crop' } = options
-  return `https://image.mux.com/${playbackId}/thumbnail.jpg?width=${width}&height=${height}&time=${time}&fit_mode=${fit_mode}`
-}
-
-// Validate playback ID format
-export function isValidPlaybackId(playbackId: string): boolean {
-  return typeof playbackId === 'string' && playbackId.length > 0 && !playbackId.includes(' ')
-}
-
-// Get stream status color for UI
-export function getStreamStatusColor(status: string): string {
-  switch (status?.toLowerCase()) {
-    case 'active':
-    case 'live':
-      return 'text-green-500'
-    case 'idle':
-    case 'preparing':
-      return 'text-yellow-500'
-    case 'disconnected':
-    case 'error':
-      return 'text-red-500'
-    default:
-      return 'text-gray-500'
+  const baseUrl = `https://stream.mux.com/${playbackId}`;
+  
+  if (Object.keys(options).length === 0) {
+    return `${baseUrl}.m3u8`;
   }
+
+  const params = new URLSearchParams();
+  
+  if (options.width) params.set('width', options.width.toString());
+  if (options.height) params.set('height', options.height.toString());
+  if (options.fit_mode) params.set('fit_mode', options.fit_mode);
+  if (options.time) params.set('time', options.time.toString());
+
+  return `${baseUrl}.m3u8?${params.toString()}`;
 }
 
-// Format stream duration
-export function formatStreamDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = Math.floor(seconds % 60)
+// Generate thumbnail URL from MUX playback ID
+export function getMuxThumbnailUrl(playbackId: string, options: {
+  width?: number;
+  height?: number;
+  fit_mode?: 'crop' | 'preserve' | 'pad';
+  time?: number;
+} = {}): string {
+  const params = new URLSearchParams({
+    width: (options.width || 640).toString(),
+    height: (options.height || 360).toString(),
+    fit_mode: options.fit_mode || 'crop',
+    time: (options.time || 0).toString()
+  });
 
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  } else {
-    return `${minutes}:${secs.toString().padStart(2, '0')}`
-  }
+  return `https://image.mux.com/${playbackId}/thumbnail.jpg?${params.toString()}`;
 }
 
-// Export configuration check
-export const isMuxConfigured = validateMuxCredentials()
-
-// Default export for easier imports
-const mux = {
-  createLiveStream,
-  getLiveStream,
-  deleteLiveStream,
-  getLiveStreamStats,
-  createAsset,
-  getAsset,
-  generateStreamUrl,
-  generateThumbnailUrl,
-  isValidPlaybackId,
-  getStreamStatusColor,
-  formatStreamDuration,
-  isMuxConfigured
+// Check if MUX credentials are configured
+export function isMuxConfigured(): boolean {
+  return !!(process.env.MUX_TOKEN_ID && process.env.MUX_TOKEN_SECRET);
 }
-
-export default mux

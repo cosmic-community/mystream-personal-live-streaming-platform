@@ -1,68 +1,67 @@
-import { LucideIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
 interface StatsCardProps {
-  title: string
-  value: string
-  icon: LucideIcon
-  color: 'red' | 'yellow' | 'blue' | 'green' | 'purple' | 'gray'
-  trend?: 'up' | 'down' | 'neutral'
-  className?: string
+  title: string;
+  value: string;
+  icon: LucideIcon;
+  trend?: 'up' | 'down' | 'neutral';
+  trendValue?: string;
+  className?: string;
 }
 
 export default function StatsCard({ 
   title, 
   value, 
   icon: Icon, 
-  color, 
-  trend = 'neutral',
+  trend, 
+  trendValue,
   className = '' 
 }: StatsCardProps) {
-  const getColorClasses = (color: string) => {
-    switch (color) {
-      case 'red':
-        return 'bg-red-500/10 text-red-500'
-      case 'yellow':
-        return 'bg-yellow-500/10 text-yellow-500'
-      case 'blue':
-        return 'bg-blue-500/10 text-blue-500'
-      case 'green':
-        return 'bg-green-500/10 text-green-500'
-      case 'purple':
-        return 'bg-purple-500/10 text-purple-500'
-      default:
-        return 'bg-gray-500/10 text-gray-500'
-    }
-  }
-
   const getTrendIcon = () => {
     switch (trend) {
       case 'up':
-        return '↗️'
+        return TrendingUp;
       case 'down':
-        return '↘️'
+        return TrendingDown;
       default:
-        return ''
+        return Minus;
     }
-  }
+  };
+
+  const getTrendColor = () => {
+    switch (trend) {
+      case 'up':
+        return 'text-green-600';
+      case 'down':
+        return 'text-red-600';
+      default:
+        return 'text-gray-500';
+    }
+  };
+
+  const TrendIcon = getTrendIcon();
 
   return (
-    <div className={`bg-white p-6 rounded-lg border hover:shadow-lg transition-shadow ${className}`}>
+    <div className={`bg-background border border-border rounded-xl p-6 ${className}`}>
       <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
-          <div className="flex items-center gap-2">
-            <p className="text-2xl font-semibold text-gray-900">{value}</p>
-            {trend !== 'neutral' && (
-              <span className="text-sm">
-                {getTrendIcon()}
-              </span>
-            )}
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Icon className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-2xl font-bold text-foreground">{value}</p>
           </div>
         </div>
-        <div className={`h-12 w-12 rounded-lg flex items-center justify-center ${getColorClasses(color)}`}>
-          <Icon className="h-6 w-6" />
-        </div>
+        
+        {trend && trendValue && (
+          <div className={`flex items-center space-x-1 ${getTrendColor()}`}>
+            <TrendIcon className="h-4 w-4" />
+            <span className="text-sm font-medium">{trendValue}</span>
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }
