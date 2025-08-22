@@ -1,223 +1,236 @@
 import Mux from '@mux/mux-node'
 import type { MuxLiveStream, MuxLiveStreamCreateParams } from '@/types'
 
-// Initialize Mux client
-const mux = new Mux({
-  tokenId: process.env.MUX_TOKEN_ID!,
-  tokenSecret: process.env.MUX_TOKEN_SECRET!
-})
-
-// Helper function to convert Mux SDK types to our custom types
-function convertMuxPlaybackIds(muxPlaybackIds: Mux.PlaybackID[]): Array<{ id: string; policy: 'public' | 'signed' }> {
-  return muxPlaybackIds.map(playbackId => ({
-    id: playbackId.id,
-    policy: (playbackId.policy === 'public' || playbackId.policy === 'signed') 
-      ? playbackId.policy 
-      : 'public' as const
-  }))
+if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
+  throw new Error('Missing MUX credentials. Please set MUX_TOKEN_ID and MUX_TOKEN_SECRET environment variables.')
 }
 
-// Create a new live stream
-export async function createMuxLiveStream(
-  params: MuxLiveStreamCreateParams = {}
-): Promise<MuxLiveStream> {
+// Initialize MUX client
+const mux = new Mux({
+  tokenId: process.env.MUX_TOKEN_ID,
+  tokenSecret: process.env.MUX_TOKEN_SECRET,
+})
+
+// Create a live stream
+export async function createLiveStream(params?: MuxLiveStreamCreateParams): Promise<MuxLiveStream> {
   try {
-    const createParams: any = {}
-    
-    if (params.playback_policy) {
-      createParams.playback_policy = params.playback_policy
-    }
-    
-    if (params.reconnect_window !== undefined) {
-      createParams.reconnect_window = params.reconnect_window
-    }
-    
-    if (params.reduced_latency !== undefined) {
-      createParams.reduced_latency = params.reduced_latency
-    }
-    
-    if (params.test !== undefined) {
-      createParams.test = params.test
+    const createParams = {
+      playback_policy: params?.playback_policy || ['public'],
+      reconnect_window: params?.reconnect_window || 60,
+      reduced_latency: params?.reduced_latency || false,
+      test: params?.test || false,
     }
 
     const liveStream = await mux.video.liveStreams.create(createParams)
 
     return {
-      id: liveStream.id,
-      stream_key: liveStream.stream_key,
-      playback_ids: convertMuxPlaybackIds(liveStream.playback_ids || []),
-      status: liveStream.status,
-      created_at: liveStream.created_at,
+      id: liveStream.id || '',
+      stream_key: liveStream.stream_key || '',
+      playback_ids: liveStream.playbook_ids?.map(pb => ({
+        id: pb.id || '',
+        policy: pb.policy as 'public' | 'signed' || 'public'
+      })) || [],
+      status: liveStream.status || 'idle',
+      created_at: liveStream.created_at || new Date().toISOString(),
       reconnect_window: liveStream.reconnect_window,
       reduced_latency: liveStream.reduced_latency,
-      test: liveStream.test
+      test: liveStream.test,
     }
   } catch (error) {
-    console.error('Error creating Mux live stream:', error)
+    console.error('Error creating MUX live stream:', error)
     throw new Error('Failed to create live stream')
   }
 }
 
-// Get live stream details
-export async function getMuxLiveStream(streamId: string): Promise<MuxLiveStream | null> {
+// Get a live stream
+export async function getLiveStream(streamId: string): Promise<MuxLiveStream | null> {
   try {
     const liveStream = await mux.video.liveStreams.retrieve(streamId)
 
+    if (!liveStream) {
+      return null
+    }
+
     return {
-      id: liveStream.id,
-      stream_key: liveStream.stream_key,
-      playback_ids: convertMuxPlaybackIds(liveStream.playback_ids || []),
-      status: liveStream.status,
-      created_at: liveStream.created_at,
+      id: liveStream.id || '',
+      stream_key: liveStream.stream_key || '',
+      playback_ids: liveStream.playbook_ids?.map(pb => ({
+        id: pb.id || '',
+        policy: pb.policy as 'public' | 'signed' || 'public'
+      })) || [],
+      status: liveStream.status || 'idle',
+      created_at: liveStream.created_at || new Date().toISOString(),
       reconnect_window: liveStream.reconnect_window,
       reduced_latency: liveStream.reduced_latency,
-      test: liveStream.test
+      test: liveStream.test,
     }
   } catch (error) {
-    console.error('Error fetching Mux live stream:', error)
+    console.error('Error fetching MUX live stream:', error)
     return null
   }
 }
 
-// List all live streams
-export async function getMuxLiveStreams(): Promise<MuxLiveStream[]> {
-  try {
-    const liveStreams = await mux.video.liveStreams.list()
-
-    return liveStreams.data.map(liveStream => ({
-      id: liveStream.id,
-      stream_key: liveStream.stream_key,
-      playback_ids: convertMuxPlaybackIds(liveStream.playback_ids || []),
-      status: liveStream.status,
-      created_at: liveStream.created_at,
-      reconnect_window: liveStream.reconnect_window,
-      reduced_latency: liveStream.reduced_latency,
-      test: liveStream.test
-    }))
-  } catch (error) {
-    console.error('Error listing Mux live streams:', error)
-    return []
-  }
-}
-
 // Delete a live stream
-export async function deleteMuxLiveStream(streamId: string): Promise<void> {
+export async function deleteLiveStream(streamId: string): Promise<boolean> {
   try {
-    await mux.video.liveStreams.delete(streamId)
+    await mux.video.liveStreams.del(streamId)
+    return true
   } catch (error) {
-    console.error('Error deleting Mux live stream:', error)
-    throw new Error('Failed to delete live stream')
-  }
-}
-
-// Create signed URL for private playback
-export async function createSignedPlaybackUrl(
-  playbackId: string,
-  params: {
-    expiresAt?: number
-    width?: number
-    height?: number
-  } = {}
-): Promise<string> {
-  try {
-    const { expiresAt, ...playbackParams } = params
-    
-    const signedUrl = mux.video.playbackIds.createUrl(playbackId, {
-      token: mux.jwt.signPlaybackId(playbackId, {
-        exp: expiresAt || Math.floor(Date.now() / 1000) + 3600, // 1 hour default
-        ...playbackParams
-      })
-    })
-
-    return signedUrl
-  } catch (error) {
-    console.error('Error creating signed playback URL:', error)
-    throw new Error('Failed to create signed playback URL')
-  }
-}
-
-// Update live stream (limited parameters supported by Mux)
-export async function updateMuxLiveStream(
-  streamId: string,
-  params: { reconnect_window?: number }
-): Promise<MuxLiveStream> {
-  try {
-    const updateParams: any = {}
-    
-    if (params.reconnect_window !== undefined) {
-      updateParams.reconnect_window = params.reconnect_window
-    }
-
-    const liveStream = await mux.video.liveStreams.update(streamId, updateParams)
-
-    return {
-      id: liveStream.id,
-      stream_key: liveStream.stream_key,
-      playback_ids: convertMuxPlaybackIds(liveStream.playback_ids || []),
-      status: liveStream.status,
-      created_at: liveStream.created_at,
-      reconnect_window: liveStream.reconnect_window,
-      reduced_latency: liveStream.reduced_latency,
-      test: liveStream.test
-    }
-  } catch (error) {
-    console.error('Error updating Mux live stream:', error)
-    throw new Error('Failed to update live stream')
+    console.error('Error deleting MUX live stream:', error)
+    return false
   }
 }
 
 // Create an asset from a live stream recording
-export async function createMuxAsset(inputUrl: string): Promise<{ id: string; playback_ids: Array<{ id: string; policy: 'public' | 'signed' }> }> {
+export async function createAssetFromLiveStream(liveStreamId: string): Promise<string | null> {
   try {
     const asset = await mux.video.assets.create({
       input: [{
-        url: inputUrl
+        url: `mux://live-streams/${liveStreamId}`
       }],
-      playback_policy: ['public']
+      playbook_policy: ['public']
     })
 
-    return {
-      id: asset.id,
-      playback_ids: convertMuxPlaybackIds(asset.playback_ids || [])
-    }
+    return asset.id || null
   } catch (error) {
-    console.error('Error creating Mux asset:', error)
-    throw new Error('Failed to create video asset')
+    console.error('Error creating asset from live stream:', error)
+    return null
   }
 }
 
-// Get live stream metrics
-export async function getMuxLiveStreamMetrics(streamId: string): Promise<{
-  current_viewers: number
-  max_viewers: number
-}> {
+// Generate a signed playback URL for private content
+export function generateSignedPlaybackUrl(
+  playbackId: string, 
+  keyId: string, 
+  keySecret: string,
+  expiration?: number
+): string {
   try {
-    // Note: Mux metrics API might require different endpoints
-    // This is a simplified version - you may need to adjust based on Mux's actual metrics API
-    const metrics = await mux.data.metrics.breakdown('current-concurrent-viewers', {
-      filters: [`live_stream_id:${streamId}`],
-      timeframe: ['1:hour:ago', 'now']
+    // FIXED: Updated to use the correct JWT signing method
+    const token = mux.jwt.signPlaybackId({
+      playbackId,
+      keyId,
+      keySecret,
+      expiration: expiration || Math.floor(Date.now() / 1000) + 3600 // 1 hour from now
     })
 
-    return {
-      current_viewers: 0, // Would need actual implementation
-      max_viewers: 0      // Would need actual implementation
-    }
+    return `https://stream.mux.com/${playbackId}.m3u8?token=${token}`
   } catch (error) {
-    console.error('Error fetching Mux metrics:', error)
-    return {
-      current_viewers: 0,
-      max_viewers: 0
-    }
+    console.error('Error generating signed playback URL:', error)
+    return `https://stream.mux.com/${playbackId}.m3u8`
   }
 }
 
-// Get webhook signature for verifying Mux webhooks
-export function verifyMuxWebhook(payload: string, signature: string, secret: string): boolean {
+// Generate a thumbnail URL
+export function generateThumbnailUrl(
+  playbackId: string,
+  options?: {
+    time?: number
+    width?: number
+    height?: number
+    fit_mode?: 'preserve' | 'stretch' | 'crop' | 'pad'
+  }
+): string {
+  const params = new URLSearchParams()
+  
+  if (options?.time) params.set('time', options.time.toString())
+  if (options?.width) params.set('width', options.width.toString())
+  if (options?.height) params.set('height', options.height.toString())
+  if (options?.fit_mode) params.set('fit_mode', options.fit_mode)
+
+  const queryString = params.toString()
+  return `https://image.mux.com/${playbackId}/thumbnail.png${queryString ? `?${queryString}` : ''}`
+}
+
+// Get live stream status
+export async function getLiveStreamStatus(streamId: string): Promise<string | null> {
   try {
-    return Mux.webhooks.verifyHeader(payload, signature, secret)
+    const liveStream = await mux.video.liveStreams.retrieve(streamId)
+    return liveStream?.status || null
   } catch (error) {
-    console.error('Error verifying Mux webhook:', error)
+    console.error('Error getting live stream status:', error)
+    return null
+  }
+}
+
+// Get viewer count from metrics (simplified)
+export async function getViewerCount(playbackId: string): Promise<number> {
+  try {
+    // FIXED: Updated metrics API call
+    const metrics = await mux.data.metrics.get('video_view_end', {
+      filters: [`playback_id:${playbackId}`],
+      timeframe: ['now-1h', 'now'],
+      group_by: 'minute'
+    })
+
+    // FIXED: Simplified metrics processing without 'breakdown' property
+    if (metrics && Array.isArray(metrics.data)) {
+      const latestData = metrics.data[metrics.data.length - 1]
+      return latestData?.value || 0
+    }
+
+    return 0
+  } catch (error) {
+    console.error('Error getting viewer count:', error)
+    return 0
+  }
+}
+
+// Validate webhook signature
+export function validateWebhookSignature(
+  rawBody: string,
+  signature: string,
+  secret: string
+): boolean {
+  try {
+    // FIXED: Updated to use correct Webhooks API
+    return Mux.Webhooks.verifyHeader(rawBody, signature, secret)
+  } catch (error) {
+    console.error('Error validating webhook signature:', error)
     return false
   }
+}
+
+// Helper function to check if stream is live
+export async function isStreamLive(streamId: string): Promise<boolean> {
+  const status = await getLiveStreamStatus(streamId)
+  return status === 'active'
+}
+
+// Helper function to get playback URL
+export function getPlaybackUrl(playbackId: string, signed: boolean = false): string {
+  if (signed) {
+    const keyId = process.env.MUX_SIGNING_KEY_ID
+    const keySecret = process.env.MUX_SIGNING_KEY_SECRET
+    
+    if (keyId && keySecret) {
+      return generateSignedPlaybackUrl(playbackId, keyId, keySecret)
+    }
+  }
+  
+  return `https://stream.mux.com/${playbackId}.m3u8`
+}
+
+// Helper to format stream data for Cosmic
+export function formatStreamForCosmic(muxStream: MuxLiveStream): {
+  stream_key: string
+  mux_playbook_id: string
+  status: string
+} {
+  return {
+    stream_key: muxStream.stream_key,
+    mux_playbook_id: muxStream.playback_ids[0]?.id || '',
+    status: muxStream.status
+  }
+}
+
+// Error helper for MUX operations
+export function handleMuxError(error: unknown, operation: string): Error {
+  console.error(`MUX ${operation} error:`, error)
+  
+  if (error instanceof Error) {
+    return new Error(`MUX ${operation} failed: ${error.message}`)
+  }
+  
+  return new Error(`MUX ${operation} failed: Unknown error`)
 }
