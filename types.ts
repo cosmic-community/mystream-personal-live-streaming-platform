@@ -107,7 +107,7 @@ export interface CosmicResponse<T> {
   skip?: number;
 }
 
-// Component prop types - FIXED: Added missing color and showActions properties
+// Component prop types - FIXED: Added missing showActions property
 export interface StatsCardProps {
   title: string;
   value: string;
@@ -144,6 +144,7 @@ export interface AccessLinkFormData {
   stream_session_id: string;
 }
 
+// FIXED: Updated CreateStreamFormData to match form state structure
 export interface CreateStreamFormData {
   stream_title: string;
   description?: string;
@@ -155,13 +156,12 @@ export interface CreateStreamFormData {
   tags?: string;
 }
 
-// MUX SDK Types - FIXED: Updated to match actual MUX SDK v1.5+
+// MUX SDK Types - FIXED: Updated to match actual MUX SDK response structure
 export interface MuxPlaybackId {
   id: string;
-  policy: 'public' | 'signed';
+  policy: 'public' | 'signed' | 'drm';
 }
 
-// FIXED: Exported MuxLiveStreamCreateParams interface
 export interface MuxLiveStreamCreateParams {
   playback_policy?: ('public' | 'signed')[];
   reconnect_window?: number;

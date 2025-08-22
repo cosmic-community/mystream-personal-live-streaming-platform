@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Trash2, Edit, Play, Square, Users, Clock } from 'lucide-react'
 import { getStreamSessions, createStreamSession, updateStreamSession } from '@/lib/cosmic'
 import { createLiveStream, deleteLiveStream } from '@/lib/mux'
-import type { StreamSession, CreateStreamFormData } from '@/types'
+import type { StreamSession, CreateStreamFormData, StreamQuality, StreamStatus } from '@/types'
 import StatsCard from '@/components/StatsCard'
 import StreamCard from '@/components/StreamCard'
 
@@ -273,7 +273,10 @@ export default function StreamsAdminPage() {
                 </label>
                 <select
                   value={formData.stream_quality}
-                  onChange={(e) => setFormData(prev => ({ ...prev, stream_quality: e.target.value }))}
+                  onChange={(e) => setFormData(prev => ({ 
+                    ...prev, 
+                    stream_quality: e.target.value as StreamQuality 
+                  }))}
                   className="form-select"
                 >
                   <option value="720p">720p HD</option>
@@ -288,7 +291,10 @@ export default function StreamsAdminPage() {
                 </label>
                 <select
                   value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
+                  onChange={(e) => setFormData(prev => ({ 
+                    ...prev, 
+                    status: e.target.value as StreamStatus 
+                  }))}
                   className="form-select"
                 >
                   <option value="scheduled">Scheduled</option>

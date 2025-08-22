@@ -14,7 +14,7 @@ export interface MuxLiveStreamResponse {
   status: string
   playback_ids: Array<{
     id: string
-    policy: 'public' | 'signed'
+    policy: 'public' | 'signed' | 'drm'
   }>
   created_at: string
   reconnect_window?: number
@@ -27,7 +27,7 @@ export interface MuxAssetResponse {
   status: string
   playback_ids: Array<{
     id: string
-    policy: 'public' | 'signed'
+    policy: 'public' | 'signed' | 'drm'
   }>
   created_at: string
   duration?: number
@@ -65,7 +65,10 @@ export async function createLiveStream(params: MuxLiveStreamCreateParams = {}): 
       id: liveStream.id || '',
       stream_key: liveStream.stream_key || '',
       status: liveStream.status || '',
-      playback_ids: liveStream.playback_ids || [],
+      playback_ids: liveStream.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
+      })) || [],
       created_at: liveStream.created_at || '',
       reconnect_window: liveStream.reconnect_window,
       reduced_latency: liveStream.reduced_latency,
@@ -90,7 +93,10 @@ export async function getLiveStream(liveStreamId: string): Promise<MuxLiveStream
       id: liveStream.id || '',
       stream_key: liveStream.stream_key || '',
       status: liveStream.status || '',
-      playback_ids: liveStream.playback_ids || [],
+      playback_ids: liveStream.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
+      })) || [],
       created_at: liveStream.created_at || '',
       reconnect_window: liveStream.reconnect_window,
       reduced_latency: liveStream.reduced_latency,
@@ -126,7 +132,10 @@ export async function getLiveStreams(): Promise<MuxLiveStreamResponse[]> {
       id: stream.id || '',
       stream_key: stream.stream_key || '',
       status: stream.status || '',
-      playback_ids: stream.playback_ids || [],
+      playback_ids: stream.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
+      })) || [],
       created_at: stream.created_at || '',
       reconnect_window: stream.reconnect_window,
       reduced_latency: stream.reduced_latency,
@@ -153,7 +162,10 @@ export async function createAssetFromLiveStream(liveStreamId: string): Promise<M
     return {
       id: asset.id || '',
       status: asset.status || '',
-      playback_ids: asset.playbook_ids || [],
+      playback_ids: asset.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
+      })) || [],
       created_at: asset.created_at || '',
       duration: asset.duration
     }
@@ -175,7 +187,10 @@ export async function getAsset(assetId: string): Promise<MuxAssetResponse | null
     return {
       id: asset.id || '',
       status: asset.status || '',
-      playback_ids: asset.playbook_ids || [],
+      playback_ids: asset.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed' | 'drm') || 'public'
+      })) || [],
       created_at: asset.created_at || '',
       duration: asset.duration
     }

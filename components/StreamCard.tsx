@@ -1,16 +1,11 @@
 import { useState } from 'react'
-import type { StreamSession } from '@/types'
+import type { StreamSession, StreamCardProps } from '@/types'
 import { Calendar, Users, Clock, Video, Edit, Play, Square, Eye } from 'lucide-react'
-
-export interface StreamCardProps {
-  stream: StreamSession;
-  onEdit?: (stream: StreamSession) => void;
-  className?: string;
-}
 
 export default function StreamCard({ 
   stream, 
   onEdit,
+  showActions = false,
   className = '' 
 }: StreamCardProps) {
   const [isHovered, setIsHovered] = useState(false)
@@ -142,22 +137,24 @@ export default function StreamCard({
         )}
 
         {/* Actions */}
-        <div className={`flex gap-2 pt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-          {onEdit && (
-            <button
-              onClick={() => onEdit(stream)}
-              className="btn-outline flex-1 flex items-center justify-center gap-2 text-sm"
-            >
-              <Edit className="h-4 w-4" />
-              Edit
+        {showActions && (
+          <div className={`flex gap-2 pt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+            {onEdit && (
+              <button
+                onClick={() => onEdit(stream)}
+                className="btn-outline flex-1 flex items-center justify-center gap-2 text-sm"
+              >
+                <Edit className="h-4 w-4" />
+                Edit
+              </button>
+            )}
+            
+            <button className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm">
+              <Eye className="h-4 w-4" />
+              View
             </button>
-          )}
-          
-          <button className="btn-primary flex-1 flex items-center justify-center gap-2 text-sm">
-            <Eye className="h-4 w-4" />
-            View
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

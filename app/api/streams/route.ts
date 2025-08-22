@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
     if (create_mux_stream) {
       try {
         muxStreamData = await createLiveStream({
-          playbook_policy: ['public'],
+          playback_policy: ['public'],
           reduced_latency: true,
           test: process.env.NODE_ENV !== 'production'
         })
