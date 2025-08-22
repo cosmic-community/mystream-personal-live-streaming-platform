@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createMuxLiveStream, getMuxLiveStreams } from '@/lib/mux'
-import { createStreamSession, getStreamSessions, updateStreamSession } from '@/lib/cosmic'
-import type { MuxLiveStreamCreateParams } from '@/types'
+import { createLiveStream, getLiveStreams } from '@/lib/mux'
+import { createStreamSession, getStreamSessions } from '@/lib/cosmic'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const streams = await getStreamSessions()
-    return NextResponse.json({ streams })
+    const { searchParams } = new URL(request.url)
+    const source = searchParams.get('source') // 'mux' or 'cosmic'
+
+    if (source === 'mux') {
+      // Get streams from MUX
+      const muxStreams = await getLiveStreams()
+      return NextResponse.json({ streams: muxStreams })
+    } else {
+      // Get stream sessions from Cosmic
+      const cosmicStreams = await getStreamSessions()
+      return NextResponse.json({ streams: cosmicStreams })
+    }
   } catch (error) {
     console.error('Error fetching streams:', error)
     return NextResponse.json(
@@ -28,7 +37,7 @@ export async function POST(request: NextRequest) {
       chat_enabled = true,
       stream_quality = '1080p',
       tags,
-      auto_create_mux = true
+      create_mux_stream = false
     } = body
 
     // Validate required fields
@@ -39,25 +48,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    let streamKey = ''
-    let muxPlaybackId = ''
+    let muxStreamData = null
 
     // Create MUX live stream if requested
-    if (auto_create_mux) {
+    if (create_mux_stream) {
       try {
-        const muxParams: MuxLiveStreamCreateParams = {
+        const muxStream = await createLiveStream({
           playback_policy: ['public'],
-          reduced_latency: true,
+          reconnect_window: 60,
+          reduced_latency: false,
           test: process.env.NODE_ENV !== 'production'
-        }
+        })
 
-        const muxStream = await createMuxLiveStream(muxParams)
-        streamKey = muxStream.stream_key
-        muxPlaybackId = muxStream.playback_ids[0]?.id || ''
+        muxStreamData = {
+          stream_key: muxStream.stream_key,
+          mux_playback_id: muxStream.playback_ids?.[0]?.id || '',
+        }
       } catch (muxError) {
         console.error('Error creating MUX stream:', muxError)
         return NextResponse.json(
-          { error: 'Failed to create live stream infrastructure' },
+          { error: 'Failed to create MUX live stream' },
           { status: 500 }
         )
       }
@@ -73,14 +83,13 @@ export async function POST(request: NextRequest) {
       chat_enabled,
       stream_quality,
       tags: tags || '',
-      ...(streamKey && { stream_key: streamKey }),
-      ...(muxPlaybackId && { mux_playback_id: muxPlaybackId })
+      ...muxStreamData
     }
 
-    const stream = await createStreamSession(streamData)
+    const streamSession = await createStreamSession(streamData)
 
     return NextResponse.json({
-      stream,
+      stream: streamSession,
       success: 'Stream created successfully'
     }, { status: 201 })
 
@@ -88,34 +97,6 @@ export async function POST(request: NextRequest) {
     console.error('Error creating stream:', error)
     return NextResponse.json(
       { error: 'Failed to create stream' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function PUT(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { id, ...updates } = body
-
-    if (!id) {
-      return NextResponse.json(
-        { error: 'Stream ID is required' },
-        { status: 400 }
-      )
-    }
-
-    const updatedStream = await updateStreamSession(id, updates)
-
-    return NextResponse.json({
-      stream: updatedStream,
-      success: 'Stream updated successfully'
-    })
-
-  } catch (error) {
-    console.error('Error updating stream:', error)
-    return NextResponse.json(
-      { error: 'Failed to update stream' },
       { status: 500 }
     )
   }
