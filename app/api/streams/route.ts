@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStreamSessions, createStreamSession, updateStreamSession } from '@/lib/cosmic'
-import { createLiveStream, type MuxLiveStream, getPrimaryPlaybackId } from '@/lib/mux'
+import { checkRateLimit, getUserIdentifier } from '@/lib/auth'
+import { createLiveStream } from '@/lib/mux'
+import type { StreamSession } from '@/types'
 
 export async function GET() {
   try {
@@ -17,6 +19,15 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting
+    const userIdentifier = getUserIdentifier(request)
+    if (!checkRateLimit(userIdentifier, 5, 60000)) { // 5 streams per minute
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please wait before creating another stream.' },
+        { status: 429 }
+      )
+    }
+
     const body = await request.json()
     const {
       stream_title,
@@ -30,81 +41,56 @@ export async function POST(request: NextRequest) {
     } = body
 
     // Validate required fields
-    if (!stream_title || stream_title.trim().length === 0) {
+    if (!stream_title) {
       return NextResponse.json(
         { error: 'Stream title is required' },
         { status: 400 }
       )
     }
 
-    // Validate stream title length
-    if (stream_title.trim().length > 100) {
-      return NextResponse.json(
-        { error: 'Stream title must be 100 characters or less' },
-        { status: 400 }
-      )
-    }
+    // Create MUX live stream if going live immediately
+    let muxData: { streamKey?: string; playbackId?: string } = {}
+    
+    if (status === 'live') {
+      try {
+        // Create live stream with correct policy parameter
+        const muxStream = await createLiveStream({
+          playback_policy: ['public'],
+          new_asset_settings: {
+            playback_policy: ['public']
+          }
+        })
 
-    // Validate status
-    const validStatuses = ['scheduled', 'live', 'ended', 'private']
-    if (!validStatuses.includes(status)) {
-      return NextResponse.json(
-        { error: 'Invalid stream status' },
-        { status: 400 }
-      )
-    }
-
-    // Create Mux live stream
-    let muxStream: MuxLiveStream | null = null
-    try {
-      muxStream = await createLiveStream({
-        playback_policy: 'public',
-        new_asset_settings: {
-          playback_policy: 'public'
+        muxData = {
+          streamKey: muxStream.stream_key,
+          playbackId: muxStream.playback_ids?.[0]?.id
         }
-      })
-    } catch (muxError) {
-      console.error('Error creating Mux stream:', muxError)
-      return NextResponse.json(
-        { error: 'Failed to create streaming infrastructure' },
-        { status: 500 }
-      )
+      } catch (muxError) {
+        console.error('Error creating MUX stream:', muxError)
+        return NextResponse.json(
+          { error: 'Failed to create live stream infrastructure' },
+          { status: 500 }
+        )
+      }
     }
 
-    if (!muxStream) {
-      return NextResponse.json(
-        { error: 'Failed to create streaming infrastructure' },
-        { status: 500 }
-      )
-    }
-
-    // Get primary playback ID
-    const primaryPlaybackId = getPrimaryPlaybackId(muxStream)
-
-    // Create stream session in Cosmic CMS
-    const streamSession = await createStreamSession({
-      stream_title: stream_title.trim(),
-      description: description?.trim() || '',
+    // Create stream session in Cosmic
+    const streamData = {
+      stream_title,
+      description,
       status,
-      start_time: start_time || '',
-      end_time: end_time || '',
-      chat_enabled: Boolean(chat_enabled),
-      stream_quality: stream_quality || '1080p',
-      tags: tags?.trim() || ''
-    })
+      start_time,
+      end_time,
+      chat_enabled,
+      stream_quality,
+      tags,
+      ...muxData
+    }
 
-    // Update with Mux data
-    const updatedSession = await updateStreamSession(streamSession.id, {
-      stream_key: muxStream.stream_key,
-      mux_playback_id: primaryPlaybackId || undefined
-    })
+    const streamSession = await createStreamSession(streamData)
 
     return NextResponse.json({
-      stream: updatedSession,
-      mux_data: {
-        stream_key: muxStream.stream_key,
-        playback_id: primaryPlaybackId
-      },
+      stream: streamSession,
       success: 'Stream created successfully'
     }, { status: 201 })
 
@@ -120,40 +106,16 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { stream_id, status, viewer_count } = body
+    const { id, ...updates } = body
 
-    if (!stream_id) {
+    if (!id) {
       return NextResponse.json(
         { error: 'Stream ID is required' },
         { status: 400 }
       )
     }
 
-    const updates: Record<string, any> = {}
-
-    if (status) {
-      const validStatuses = ['scheduled', 'live', 'ended', 'private']
-      if (!validStatuses.includes(status)) {
-        return NextResponse.json(
-          { error: 'Invalid stream status' },
-          { status: 400 }
-        )
-      }
-      updates.status = status
-    }
-
-    if (typeof viewer_count === 'number' && viewer_count >= 0) {
-      updates.viewer_count = viewer_count
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return NextResponse.json(
-        { error: 'No valid updates provided' },
-        { status: 400 }
-      )
-    }
-
-    const updatedStream = await updateStreamSession(stream_id, updates)
+    const updatedStream = await updateStreamSession(id, updates)
 
     return NextResponse.json({
       stream: updatedStream,
