@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createMuxLiveStream, getMuxLiveStreams } from '@/lib/mux'
+import { createMuxLiveStream, getAllMuxLiveStreams } from '@/lib/mux'
 import { createStreamSession } from '@/lib/cosmic'
 
 export async function GET() {
   try {
-    const streams = await getMuxLiveStreams()
+    const streams = await getAllMuxLiveStreams()
     return NextResponse.json({ streams })
   } catch (error) {
     console.error('Error fetching streams:', error)
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const muxStream = await createMuxLiveStream({
       playback_policy: ['public'],
       reconnect_window: 60,
-      reduced_latency: false
+      test: false
     })
 
     if (!muxStream || !muxStream.stream_key) {

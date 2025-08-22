@@ -162,11 +162,12 @@ export interface MuxPlaybackId {
   policy: 'public' | 'signed' | 'drm';
 }
 
+// FIXED: Updated MuxLiveStreamCreateParams to match actual MUX SDK parameters
 export interface MuxLiveStreamCreateParams {
   playback_policy?: ('public' | 'signed')[];
   reconnect_window?: number;
-  reduced_latency?: boolean;
   test?: boolean;
+  // Note: removed reduced_latency as it's not supported in current MUX SDK
 }
 
 export interface MuxLiveStream {
@@ -176,8 +177,8 @@ export interface MuxLiveStream {
   status: string;
   created_at: string;
   reconnect_window?: number;
-  reduced_latency?: boolean;
   test?: boolean;
+  // Note: removed reduced_latency as it's not supported in current MUX SDK
 }
 
 export interface MuxAssetInput {
