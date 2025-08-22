@@ -1,233 +1,212 @@
-'use client'
-
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
+import { notFound } from 'next/navigation'
 import VideoPlayer from '@/components/VideoPlayer'
 import Chat from '@/components/Chat'
 import StreamInfo from '@/components/StreamInfo'
-import { getAccessLinkByToken, updateAccessLinkUsage } from '@/lib/cosmic'
-import type { AccessLink, StreamSession } from '@/types'
-import { Shield, AlertCircle } from 'lucide-react'
+import { getAccessLinkByToken, updateAccessLinkUsage, getStreamSession } from '@/lib/cosmic'
+import type { AccessPermission } from '@/types'
 
-export default function WatchPage() {
-  const searchParams = useSearchParams()
-  const token = searchParams.get('token')
+interface SearchParams {
+  token?: string
+}
+
+interface WatchPageProps {
+  searchParams: Promise<SearchParams>
+}
+
+async function WatchContent({ searchParams }: WatchPageProps) {
+  const params = await searchParams
+  const { token } = params
+
+  if (!token) {
+    notFound()
+  }
+
+  // Validate access token and get stream details
+  const accessLink = await getAccessLinkByToken(token)
   
-  const [accessLink, setAccessLink] = useState<AccessLink | null>(null)
-  const [streamSession, setStreamSession] = useState<StreamSession | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [viewerName, setViewerName] = useState<string>('')
-  const [hasJoined, setHasJoined] = useState(false)
-
-  useEffect(() => {
-    async function validateToken() {
-      if (!token) {
-        setError('No access token provided')
-        setIsLoading(false)
-        return
-      }
-
-      try {
-        const link = await getAccessLinkByToken(token)
-        
-        if (!link) {
-          setError('Invalid or expired access token')
-          setIsLoading(false)
-          return
-        }
-
-        if (!link.metadata?.active) {
-          setError('This access link has been deactivated')
-          setIsLoading(false)
-          return
-        }
-
-        const stream = link.metadata?.stream_session
-        if (!stream) {
-          setError('Stream session not found')
-          setIsLoading(false)
-          return
-        }
-
-        // Update access link usage
-        await updateAccessLinkUsage(link.id)
-
-        setAccessLink(link)
-        setStreamSession(stream as StreamSession)
-        setIsLoading(false)
-      } catch (err) {
-        console.error('Error validating token:', err)
-        setError('Failed to validate access token')
-        setIsLoading(false)
-      }
-    }
-
-    validateToken()
-  }, [token])
-
-  const handleJoinStream = (name: string) => {
-    if (name.trim().length >= 2) {
-      setViewerName(name.trim())
-      setHasJoined(true)
-    }
+  if (!accessLink || !accessLink.metadata?.stream_session) {
+    notFound()
   }
 
-  if (isLoading) {
+  const streamSession = accessLink.metadata.stream_session
+
+  if (!streamSession || !streamSession.metadata) {
+    notFound()
+  }
+
+  // Update access link usage tracking
+  if (accessLink.id) {
+    await updateAccessLinkUsage(accessLink.id)
+  }
+
+  // Get stream status
+  const streamStatus = streamSession.metadata.status?.key || 'scheduled'
+  const isLive = streamStatus === 'live'
+  const playbackId = streamSession.metadata.mux_playback_id || ''
+
+  // Check if stream is accessible
+  if (streamStatus === 'private' && !accessLink.metadata?.active) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500 mx-auto mb-4"></div>
-          <p className="text-white">Validating access token...</p>
+          <h1 className="text-2xl font-bold text-foreground mb-4">Access Denied</h1>
+          <p className="text-muted-foreground">This access link is no longer active.</p>
         </div>
       </div>
     )
   }
 
-  if (error || !accessLink || !streamSession) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-6">
-          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-6" />
-          <h1 className="text-2xl font-bold text-white mb-4">Access Denied</h1>
-          <p className="text-gray-300 mb-6">
-            {error || 'Unable to access this stream'}
-          </p>
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
-            <p className="font-medium mb-2">Common issues:</p>
-            <ul className="text-left space-y-1">
-              <li>• Access link has expired</li>
-              <li>• Stream has been cancelled</li>
-              <li>• Invalid token format</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    )
+  // Get permissions with proper type casting
+  const permissionsKey = accessLink.metadata?.permissions?.key || 'view-only'
+  let permissions: AccessPermission = 'view-only' // Default fallback
+  
+  // Type-safe permission assignment
+  if (permissionsKey === 'view-only' || permissionsKey === 'chat' || permissionsKey === 'moderator') {
+    permissions = permissionsKey as AccessPermission
   }
 
-  if (!hasJoined) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="max-w-md mx-auto px-6">
-          <div className="bg-gray-800 rounded-lg p-8 border border-gray-700">
-            <div className="text-center mb-6">
-              <Shield className="h-12 w-12 text-green-500 mx-auto mb-4" />
-              <h1 className="text-2xl font-bold text-white mb-2">Access Verified</h1>
-              <p className="text-gray-400">
-                You have {accessLink.metadata?.permissions?.value || 'view-only'} permissions
-              </p>
-            </div>
-
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-white mb-2">{streamSession.title}</h3>
-              <p className="text-gray-400 text-sm">
-                Status: <span className={`font-medium ${
-                  streamSession.metadata?.status?.key === 'live' ? 'text-red-400' :
-                  streamSession.metadata?.status?.key === 'scheduled' ? 'text-yellow-400' :
-                  'text-gray-400'
-                }`}>
-                  {streamSession.metadata?.status?.value || 'Unknown'}
-                </span>
-              </p>
-            </div>
-
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              const formData = new FormData(e.currentTarget)
-              const name = formData.get('viewerName') as string
-              handleJoinStream(name)
-            }}>
-              <div className="mb-4">
-                <label htmlFor="viewerName" className="block text-sm font-medium text-gray-300 mb-2">
-                  Enter your name to join
-                </label>
-                <input
-                  type="text"
-                  id="viewerName"
-                  name="viewerName"
-                  placeholder="Your name"
-                  className="form-input w-full bg-gray-700 border-gray-600 text-white placeholder-gray-400"
-                  minLength={2}
-                  maxLength={50}
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                className="btn-primary w-full"
-              >
-                Join Stream
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const playbackId = streamSession.metadata?.mux_playback_id
-  const isLive = streamSession.metadata?.status?.key === 'live'
-  const chatEnabled = streamSession.metadata?.chat_enabled && 
-    (accessLink.metadata?.permissions?.key === 'chat' || accessLink.metadata?.permissions?.key === 'moderator')
+  const chatEnabled = streamSession.metadata.chat_enabled ?? false
 
   return (
-    <div className="min-h-screen bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Stream Header */}
-        <StreamInfo 
-          stream={streamSession}
-          viewerName={viewerName}
-          permissions={accessLink.metadata?.permissions?.key || 'view-only'}
-        />
-
-        {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Video Player */}
-          <div className="lg:col-span-3">
-            {playbackId ? (
-              <VideoPlayer
-                playbackId={playbackId}
-                title={streamSession.title}
-                isLive={isLive}
-              />
-            ) : (
-              <div className="aspect-video bg-gray-800 rounded-lg flex items-center justify-center">
-                <div className="text-center">
-                  <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <p className="text-gray-400">Stream not available</p>
-                  <p className="text-gray-500 text-sm mt-2">
-                    {isLive ? 'Stream may be starting soon' : 'Stream has ended or not yet started'}
-                  </p>
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Main Content Area */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Video Player */}
+            <div className="aspect-video bg-black rounded-lg overflow-hidden">
+              {playbackId ? (
+                <VideoPlayer
+                  playbackId={playbackId}
+                  title={streamSession.metadata.stream_title || streamSession.title}
+                  isLive={isLive}
+                  onViewerCountChange={(count) => {
+                    console.log('Viewer count updated:', count)
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white">
+                  <div className="text-center">
+                    <div className="text-4xl mb-4">📺</div>
+                    <h3 className="text-lg font-medium">Stream not available</h3>
+                    <p className="text-sm opacity-75">Please check back later</p>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+
+            {/* Stream Information */}
+            <StreamInfo
+              title={streamSession.metadata.stream_title || streamSession.title}
+              description={streamSession.metadata.description || ''}
+              status={streamStatus}
+              startTime={streamSession.metadata.start_time}
+              endTime={streamSession.metadata.end_time}
+              tags={streamSession.metadata.tags}
+              viewerCount={streamSession.metadata.viewer_count || 0}
+            />
           </div>
 
           {/* Chat Sidebar */}
-          {chatEnabled && (
-            <div className="lg:col-span-1">
-              <Chat
-                streamId={streamSession.id}
-                viewerName={viewerName}
-                isEnabled={chatEnabled}
-                permissions={accessLink.metadata?.permissions?.key || 'view-only'}
-              />
+          <div className="lg:col-span-1">
+            <div className="sticky top-8">
+              <div className="bg-card rounded-lg border shadow-sm h-[600px] flex flex-col">
+                <Chat
+                  streamId={streamSession.id}
+                  viewerName="Anonymous Viewer"
+                  isEnabled={chatEnabled}
+                  permissions={permissions}
+                />
+              </div>
+
+              {/* Access Information */}
+              <div className="mt-4 p-4 bg-muted/50 rounded-lg">
+                <h3 className="font-medium text-sm mb-2">Access Details</h3>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Permission Level:</span>
+                    <span className="font-medium">
+                      {accessLink.metadata?.permissions?.value || 'View Only'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Usage Count:</span>
+                    <span className="font-medium">
+                      {accessLink.metadata?.usage_count || 0}
+                    </span>
+                  </div>
+                  {accessLink.metadata?.expiration_date && (
+                    <div className="flex justify-between">
+                      <span>Expires:</span>
+                      <span className="font-medium">
+                        {new Date(accessLink.metadata.expiration_date).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Stream Description */}
-        {streamSession.metadata?.description && (
-          <div className="mt-8 bg-gray-800 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">About this stream</h3>
-            <div 
-              className="text-gray-300 prose prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: streamSession.metadata.description }}
-            />
+        {/* Stream Status Banner */}
+        {streamStatus === 'scheduled' && (
+          <div className="fixed bottom-4 left-4 right-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 text-center">
+            <p className="text-yellow-600 dark:text-yellow-400">
+              This stream is scheduled to start at{' '}
+              {streamSession.metadata.start_time ? 
+                new Date(streamSession.metadata.start_time).toLocaleString() : 
+                'a later time'
+              }
+            </p>
+          </div>
+        )}
+
+        {streamStatus === 'ended' && (
+          <div className="fixed bottom-4 left-4 right-4 bg-gray-500/10 border border-gray-500/20 rounded-lg p-4 text-center">
+            <p className="text-gray-600 dark:text-gray-400">
+              This stream has ended.
+              {streamSession.metadata.recording_url && (
+                <span>
+                  {' '}
+                  <a 
+                    href={streamSession.metadata.recording_url} 
+                    className="underline hover:no-underline"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View Recording
+                  </a>
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+
+        {streamStatus === 'live' && (
+          <div className="fixed bottom-4 left-4 right-4 bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-center">
+            <div className="flex items-center justify-center space-x-2">
+              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+              <p className="text-red-600 dark:text-red-400 font-medium">
+                LIVE NOW
+              </p>
+            </div>
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+export default function WatchPage(props: WatchPageProps) {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    }>
+      <WatchContent {...props} />
+    </Suspense>
   )
 }
