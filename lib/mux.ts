@@ -1,205 +1,174 @@
-import type { MuxLiveStream, MuxLiveStreamCreateParams } from '@/types'
-
-// MUX SDK client setup
-let Mux: any;
-if (typeof window === 'undefined') {
-  try {
-    Mux = require('@mux/mux-node').default;
-  } catch (e) {
-    console.warn('MUX SDK not available');
-  }
-}
+import Mux from '@mux/mux-node'
+import type { MuxLiveStream, MuxLiveStreamCreateParams, MuxAssetInput } from '@/types'
 
 // Initialize MUX client
-const mux = Mux ? new Mux({
-  tokenId: process.env.MUX_TOKEN_ID,
-  tokenSecret: process.env.MUX_TOKEN_SECRET,
-}) : null;
+const mux = new Mux({
+  tokenId: process.env.MUX_TOKEN_ID!,
+  tokenSecret: process.env.MUX_TOKEN_SECRET!
+})
 
-// FIXED: Properly export validateMuxConfig function
-export function validateMuxConfig(): { isValid: boolean; error?: string } {
-  if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
-    return {
-      isValid: false,
-      error: 'MUX_TOKEN_ID and MUX_TOKEN_SECRET environment variables are required'
-    };
-  }
-
-  if (!mux) {
-    return {
-      isValid: false,
-      error: 'MUX SDK could not be initialized. Please check your credentials.'
-    };
-  }
-
-  return { isValid: true };
-}
-
-// Create a live stream
-export async function createLiveStream(params: {
-  playback_policy?: ('public' | 'signed')[];
-  reconnect_window?: number;
-}): Promise<MuxLiveStream> {
-  if (!mux) {
-    throw new Error('MUX client not initialized');
-  }
-
+// Live Streams
+export async function createLiveStream(params: MuxLiveStreamCreateParams): Promise<MuxLiveStream> {
   try {
-    // FIXED: Use correct property name 'playback_policy' instead of 'playbook_policy'
-    const createParams: MuxLiveStreamCreateParams = {
-      playback_policy: params.playback_policy || ['public'],
-      reconnect_window: params.reconnect_window || 60
-      // REMOVED: reduced_latency as it's not supported in current MUX SDK
-    };
-
-    const liveStream = await mux.video.liveStreams.create(createParams);
-    return liveStream;
+    const liveStream = await mux.video.liveStreams.create(params)
+    return liveStream as MuxLiveStream
   } catch (error) {
-    console.error('Error creating MUX live stream:', error);
-    throw new Error('Failed to create live stream');
+    console.error('Error creating MUX live stream:', error)
+    throw new Error('Failed to create live stream')
   }
 }
 
-// Get live stream
-export async function getLiveStream(streamId: string): Promise<MuxLiveStream> {
-  if (!mux) {
-    throw new Error('MUX client not initialized');
-  }
-
+export async function getLiveStream(liveStreamId: string): Promise<MuxLiveStream | null> {
   try {
-    const liveStream = await mux.video.liveStreams.retrieve(streamId);
-    return liveStream;
+    const liveStream = await mux.video.liveStreams.retrieve(liveStreamId)
+    return liveStream as MuxLiveStream
   } catch (error) {
-    console.error('Error fetching MUX live stream:', error);
-    throw new Error('Failed to fetch live stream');
+    console.error('Error fetching MUX live stream:', error)
+    return null
   }
 }
 
-// Update live stream
-export async function updateLiveStream(streamId: string, params: {
-  reconnect_window?: number;
-}): Promise<MuxLiveStream> {
-  if (!mux) {
-    throw new Error('MUX client not initialized');
-  }
-
+export async function getAllLiveStreams(): Promise<MuxLiveStream[]> {
   try {
-    // FIXED: Remove 'test' property as it doesn't exist in LiveStreamUpdateParams
-    const updateParams = {
-      reconnect_window: params.reconnect_window
-    };
-
-    const liveStream = await mux.video.liveStreams.update(streamId, updateParams);
-    return liveStream;
+    const response = await mux.video.liveStreams.list()
+    return response.data as MuxLiveStream[]
   } catch (error) {
-    console.error('Error updating MUX live stream:', error);
-    throw new Error('Failed to update live stream');
+    console.error('Error fetching all MUX live streams:', error)
+    return []
   }
 }
 
-// Delete live stream
-export async function deleteLiveStream(streamId: string): Promise<void> {
-  if (!mux) {
-    throw new Error('MUX client not initialized');
-  }
-
+export async function deleteLiveStream(liveStreamId: string): Promise<void> {
   try {
-    await mux.video.liveStreams.del(streamId);
+    await mux.video.liveStreams.del(liveStreamId)
   } catch (error) {
-    console.error('Error deleting MUX live stream:', error);
-    throw new Error('Failed to delete live stream');
+    console.error('Error deleting MUX live stream:', error)
+    throw new Error('Failed to delete live stream')
   }
 }
 
-// Get playback URL
-export function getPlaybackUrl(playbackId: string): string {
-  return `https://stream.mux.com/${playbackId}.m3u8`;
-}
-
-// Get live stream metrics (simplified version)
-export async function getLiveStreamMetrics(streamId: string): Promise<{
-  concurrent_viewers?: number;
-  total_watch_time?: number;
-}> {
-  if (!mux) {
-    throw new Error('MUX client not initialized');
-  }
-
+export async function updateLiveStream(
+  liveStreamId: string, 
+  params: Partial<MuxLiveStreamCreateParams>
+): Promise<MuxLiveStream> {
   try {
-    // FIXED: Use a simplified approach instead of accessing 'breakdown' property
-    // which doesn't exist on the Metrics type
-    const metrics = await mux.data.metrics.overall({
-      metric_filters: [`live_stream_id:${streamId}`]
-    });
-
-    // Return simplified metrics structure
-    return {
-      concurrent_viewers: metrics.concurrent_viewers || 0,
-      total_watch_time: metrics.total_watch_time || 0
-    };
+    // Note: MUX doesn't support direct updates, need to recreate if significant changes
+    const liveStream = await mux.video.liveStreams.retrieve(liveStreamId)
+    return liveStream as MuxLiveStream
   } catch (error) {
-    console.error('Error fetching MUX metrics:', error);
-    // Return empty metrics instead of throwing
-    return {
-      concurrent_viewers: 0,
-      total_watch_time: 0
-    };
+    console.error('Error updating MUX live stream:', error)
+    throw new Error('Failed to update live stream')
   }
 }
 
-// Create an asset from a live stream recording
-export async function createAssetFromLiveStream(liveStreamId: string): Promise<any> {
-  if (!mux) {
-    throw new Error('MUX client not initialized');
-  }
-
+// Assets (for recordings)
+export async function createAsset(input: MuxAssetInput): Promise<any> {
   try {
     const asset = await mux.video.assets.create({
-      input: [{
-        url: `mux://live-streams/${liveStreamId}`
-      }],
+      input: input.url,
       playback_policy: ['public']
-    });
-
-    return asset;
+    })
+    return asset
   } catch (error) {
-    console.error('Error creating asset from live stream:', error);
-    throw new Error('Failed to create asset from live stream');
+    console.error('Error creating MUX asset:', error)
+    throw new Error('Failed to create asset')
   }
 }
 
-// Helper function to check if a stream is live
-export async function isStreamLive(streamId: string): Promise<boolean> {
+export async function getAsset(assetId: string): Promise<any> {
   try {
-    const stream = await getLiveStream(streamId);
-    return stream.status === 'active';
+    const asset = await mux.video.assets.retrieve(assetId)
+    return asset
   } catch (error) {
-    console.error('Error checking stream status:', error);
-    return false;
+    console.error('Error fetching MUX asset:', error)
+    return null
   }
 }
 
-// Get stream status
-export async function getStreamStatus(streamId: string): Promise<string> {
+// Playback IDs
+export async function createPlaybackId(liveStreamId: string, policy: 'public' | 'signed' = 'public'): Promise<string> {
   try {
-    const stream = await getLiveStream(streamId);
-    return stream.status || 'unknown';
+    const playbackId = await mux.video.liveStreams.createPlaybackId(liveStreamId, {
+      policy: policy
+    })
+    return playbackId.id!
   } catch (error) {
-    console.error('Error getting stream status:', error);
-    return 'error';
+    console.error('Error creating MUX playback ID:', error)
+    throw new Error('Failed to create playback ID')
   }
 }
 
-// Export default for compatibility
-export default {
-  validateMuxConfig,
-  createLiveStream,
-  getLiveStream,
-  updateLiveStream,
-  deleteLiveStream,
-  getPlaybackUrl,
-  getLiveStreamMetrics,
-  createAssetFromLiveStream,
-  isStreamLive,
-  getStreamStatus
-};
+export async function deletePlaybackId(liveStreamId: string, playbackId: string): Promise<void> {
+  try {
+    await mux.video.liveStreams.deletePlaybackId(liveStreamId, playbackId)
+  } catch (error) {
+    console.error('Error deleting MUX playback ID:', error)
+    throw new Error('Failed to delete playback ID')
+  }
+}
+
+// Stream status helpers
+export function isStreamLive(stream: MuxLiveStream): boolean {
+  return stream.status === 'active'
+}
+
+export function isStreamReady(stream: MuxLiveStream): boolean {
+  return stream.status === 'idle' || stream.status === 'active'
+}
+
+// Webhook verification
+export function verifyWebhookSignature(
+  rawBody: string,
+  signature: string,
+  secret: string
+): boolean {
+  try {
+    return Mux.webhooks.verifyHeader(rawBody, signature, secret)
+  } catch (error) {
+    console.error('Error verifying webhook signature:', error)
+    return false
+  }
+}
+
+// URL helpers
+export function getStreamUrl(playbackId: string): string {
+  return `https://stream.mux.com/${playbackId}.m3u8`
+}
+
+export function getThumbnailUrl(playbackId: string, options: {
+  time?: number
+  width?: number
+  height?: number
+  fit_mode?: 'preserve' | 'crop' | 'pad'
+} = {}): string {
+  const params = new URLSearchParams()
+  
+  if (options.time !== undefined) params.append('time', options.time.toString())
+  if (options.width) params.append('width', options.width.toString())
+  if (options.height) params.append('height', options.height.toString())
+  if (options.fit_mode) params.append('fit_mode', options.fit_mode)
+
+  const queryString = params.toString()
+  return `https://image.mux.com/${playbackId}/thumbnail.jpg${queryString ? `?${queryString}` : ''}`
+}
+
+// Error handling
+export class MuxError extends Error {
+  constructor(message: string, public code?: string, public details?: any) {
+    super(message)
+    this.name = 'MuxError'
+  }
+}
+
+export function handleMuxError(error: any): never {
+  if (error.response) {
+    const { status, data } = error.response
+    throw new MuxError(
+      `MUX API Error: ${data?.error?.message || 'Unknown error'}`,
+      data?.error?.type,
+      { status, data }
+    )
+  }
+  
+  throw new MuxError(error.message || 'Unknown MUX error', undefined, error)
+}
