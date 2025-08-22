@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createMuxLiveStream, getAllMuxLiveStreams } from '@/lib/mux'
-import { createStreamSession } from '@/lib/cosmic'
+import { createLiveStream, getAllLiveStreams } from '@/lib/mux'
+import { createStreamSession, updateStreamSession } from '@/lib/cosmic'
+import { checkRateLimit, getUserIdentifier } from '@/lib/auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const streams = await getAllMuxLiveStreams()
-    return NextResponse.json({ streams })
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get('status')
+
+    // Get all live streams from MUX
+    const muxStreams = await getAllLiveStreams()
+    
+    // Filter by status if provided
+    const filteredStreams = status 
+      ? muxStreams.filter(stream => stream.status === status)
+      : muxStreams
+
+    return NextResponse.json({ streams: filteredStreams })
   } catch (error) {
     console.error('Error fetching streams:', error)
     return NextResponse.json(
@@ -17,53 +28,91 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting
+    const userIdentifier = getUserIdentifier(request)
+    if (!checkRateLimit(userIdentifier, 5, 300000)) { // 5 streams per 5 minutes
+      return NextResponse.json(
+        { error: 'Too many stream creation requests. Please wait before creating another stream.' },
+        { status: 429 }
+      )
+    }
+
     const body = await request.json()
-    const { stream_title, description, status, start_time, end_time, chat_enabled, stream_quality, tags } = body
+    const {
+      stream_title,
+      description = '',
+      status = 'scheduled',
+      start_time = '',
+      end_time = '',
+      chat_enabled = true,
+      stream_quality = '1080p',
+      tags = ''
+    } = body
 
     // Validate required fields
-    if (!stream_title) {
+    if (!stream_title || stream_title.trim().length === 0) {
       return NextResponse.json(
         { error: 'Stream title is required' },
         { status: 400 }
       )
     }
 
-    // Create MUX live stream
-    const muxStream = await createMuxLiveStream({
-      playback_policy: ['public'],
-      reconnect_window: 60,
-      test: false
-    })
-
-    if (!muxStream || !muxStream.stream_key) {
-      throw new Error('Failed to create MUX live stream')
+    if (stream_title.length > 100) {
+      return NextResponse.json(
+        { error: 'Stream title must be less than 100 characters' },
+        { status: 400 }
+      )
     }
 
-    // Create stream session in Cosmic CMS
+    // Validate status
+    const validStatuses = ['scheduled', 'live', 'ended', 'private']
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: 'Invalid stream status' },
+        { status: 400 }
+      )
+    }
+
+    // Validate stream quality
+    const validQualities = ['720p', '1080p', '4k']
+    if (!validQualities.includes(stream_quality)) {
+      return NextResponse.json(
+        { error: 'Invalid stream quality' },
+        { status: 400 }
+      )
+    }
+
+    // Create MUX live stream
+    const muxStream = await createLiveStream({
+      playback_policy: ['public'],
+      reconnect_window: 60,
+      test: process.env.NODE_ENV !== 'production'
+    })
+
+    if (!muxStream || !muxStream.stream_key || !muxStream.playback_ids?.[0]?.id) {
+      throw new Error('Invalid response from MUX API')
+    }
+
+    // Create stream session in Cosmic
     const streamSession = await createStreamSession({
-      stream_title,
-      description,
-      status: status || 'scheduled',
+      stream_title: stream_title.trim(),
+      description: description.trim(),
+      status,
       start_time,
       end_time,
-      chat_enabled: chat_enabled ?? true,
-      stream_quality: stream_quality || '1080p',
-      tags
+      chat_enabled,
+      stream_quality,
+      tags: tags.trim()
     })
 
     // Update stream session with MUX details
-    if (streamSession.id) {
-      // Import the function properly
-      const { updateStreamSession } = await import('@/lib/cosmic')
-      
-      await updateStreamSession(streamSession.id, {
-        stream_key: muxStream.stream_key,
-        mux_playback_id: muxStream.playback_ids?.[0]?.id || ''
-      })
-    }
+    const updatedSession = await updateStreamSession(streamSession.id, {
+      stream_key: muxStream.stream_key,
+      mux_playback_id: muxStream.playback_ids[0].id
+    })
 
     return NextResponse.json({
-      stream: streamSession,
+      stream: updatedSession,
       mux_stream: muxStream,
       success: 'Stream created successfully'
     }, { status: 201 })
