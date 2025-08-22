@@ -1,3 +1,5 @@
+'use client'
+
 import { useState } from 'react'
 import type { StreamSession, StreamCardProps } from '@/types'
 import { Calendar, Users, Clock, Video, Edit, Play, Square, Eye } from 'lucide-react'
