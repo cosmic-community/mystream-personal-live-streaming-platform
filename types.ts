@@ -111,6 +111,7 @@ export interface CosmicResponse<T> {
 export interface StreamCardProps {
   stream: StreamSession;
   onEdit?: (stream: StreamSession) => void;
+  showActions?: boolean; // Added missing prop
   className?: string;
 }
 
@@ -143,6 +144,22 @@ export interface CreateStreamFormData {
   chat_enabled?: boolean;
   stream_quality?: StreamQuality;
   tags?: string;
+}
+
+// MUX SDK Types - Updated to match actual SDK
+export interface MuxPlaybackId {
+  id: string;
+  policy: 'public' | 'signed' | 'drm';
+}
+
+export interface MuxLiveStreamCreateParams {
+  reconnect_window?: number;
+  reduced_latency?: boolean;
+  test?: boolean;
+}
+
+export interface MuxAssetInput {
+  url: string;
 }
 
 // Utility types
