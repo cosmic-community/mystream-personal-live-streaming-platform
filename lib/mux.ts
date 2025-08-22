@@ -1,106 +1,74 @@
-import { MuxLiveStream, MuxPlaybackId } from '@/types'
+import Mux from '@mux/mux-node'
 
-// MUX Configuration
-const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID
-const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET
+// Initialize Mux SDK
+const mux = new Mux({
+  tokenId: process.env.MUX_TOKEN_ID as string,
+  tokenSecret: process.env.MUX_TOKEN_SECRET as string
+})
 
-if (!MUX_TOKEN_ID || !MUX_TOKEN_SECRET) {
-  throw new Error('MUX_TOKEN_ID and MUX_TOKEN_SECRET environment variables are required')
+// Type definitions for MUX SDK
+export interface MuxPlaybackId {
+  id: string
+  policy: 'public' | 'signed'
 }
 
-// Initialize MUX SDK with proper error handling
-let Mux: any
-try {
-  Mux = require('@mux/mux-node')
-} catch (error) {
-  console.warn('MUX SDK not available - streaming functionality will be limited')
-}
-
-const mux = Mux ? new Mux({
-  tokenId: MUX_TOKEN_ID,
-  tokenSecret: MUX_TOKEN_SECRET,
-}) : null
-
-export async function createLiveStream(options: {
-  reconnectWindow?: number
-  reducedLatency?: boolean  
+export interface MuxLiveStreamCreateParams {
+  reconnect_window?: number
+  reduced_latency?: boolean
   test?: boolean
-} = {}): Promise<MuxLiveStream | null> {
-  if (!mux) {
-    console.error('MUX SDK not available')
-    return null
-  }
+}
 
+export interface MuxLiveStream {
+  id: string
+  stream_key: string
+  playback_ids: MuxPlaybackId[]
+  status: string
+  created_at: string
+  reconnect_window?: number
+  reduced_latency?: boolean
+  test?: boolean
+}
+
+// Create a live stream
+export async function createLiveStream(params: MuxLiveStreamCreateParams = {}): Promise<MuxLiveStream | null> {
   try {
-    const liveStream = await mux.video.liveStreams.create({
-      reconnect_window: options.reconnectWindow || 60,
-      reduced_latency: options.reducedLatency || false,
-      test: options.test || false,
-      playback_policy: ['public']
+    const response = await mux.video.liveStreams.create({
+      playback_policy: ['public'],
+      new_asset_settings: {
+        playback_policy: ['public']
+      },
+      ...params
     })
 
-    // Transform MUX response to match our types
-    const playbackIds: MuxPlaybackId[] = (liveStream.playback_ids || []).map((playbackId: any) => ({
-      id: playbackId.id,
-      policy: playbackId.policy === 'drm' ? 'signed' : playbackId.policy as 'public' | 'signed'
-    }))
+    if (!response || !response.data) {
+      return null
+    }
 
+    const stream = response.data
+    
     return {
-      id: liveStream.id,
-      stream_key: liveStream.stream_key,
-      playback_ids: playbackIds,
-      status: liveStream.status,
-      created_at: liveStream.created_at,
-      reconnect_window: liveStream.reconnect_window,
-      reduced_latency: liveStream.reduced_latency,
-      test: liveStream.test
+      id: stream.id || '',
+      stream_key: stream.stream_key || '',
+      playback_ids: stream.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed') || 'public'
+      })) || [],
+      status: stream.status || 'idle',
+      created_at: stream.created_at || new Date().toISOString(),
+      reconnect_window: stream.reconnect_window,
+      reduced_latency: stream.reduced_latency,
+      test: stream.test
     }
   } catch (error) {
     console.error('Error creating MUX live stream:', error)
-    throw new Error('Failed to create live stream')
-  }
-}
-
-export async function getLiveStream(liveStreamId: string): Promise<MuxLiveStream | null> {
-  if (!mux) {
-    console.error('MUX SDK not available')
-    return null
-  }
-
-  try {
-    const liveStream = await mux.video.liveStreams.retrieve(liveStreamId)
-    
-    // Transform MUX response to match our types
-    const playbackIds: MuxPlaybackId[] = (liveStream.playback_ids || []).map((playbackId: any) => ({
-      id: playbackId.id,
-      policy: playbackId.policy === 'drm' ? 'signed' : playbackId.policy as 'public' | 'signed'
-    }))
-
-    return {
-      id: liveStream.id,
-      stream_key: liveStream.stream_key,
-      playback_ids: playbackIds,
-      status: liveStream.status,
-      created_at: liveStream.created_at,
-      reconnect_window: liveStream.reconnect_window,
-      reduced_latency: liveStream.reduced_latency,
-      test: liveStream.test
-    }
-  } catch (error) {
-    console.error('Error retrieving MUX live stream:', error)
     return null
   }
 }
 
-export async function deleteLiveStream(liveStreamId: string): Promise<boolean> {
-  if (!mux) {
-    console.error('MUX SDK not available')
-    return false
-  }
-
+// Delete a live stream
+export async function deleteLiveStream(streamId: string): Promise<boolean> {
   try {
-    // Use the correct method name for MUX SDK
-    await mux.video.liveStreams.delete(liveStreamId)
+    await mux.video.liveStreams.del(streamId)
     return true
   } catch (error) {
     console.error('Error deleting MUX live stream:', error)
@@ -108,92 +76,78 @@ export async function deleteLiveStream(liveStreamId: string): Promise<boolean> {
   }
 }
 
-export async function createAsset(input: { url: string }): Promise<any> {
-  if (!mux) {
-    console.error('MUX SDK not available')
+// Get live stream details
+export async function getLiveStream(streamId: string): Promise<MuxLiveStream | null> {
+  try {
+    const response = await mux.video.liveStreams.get(streamId)
+    
+    if (!response || !response.data) {
+      return null
+    }
+
+    const stream = response.data
+    
+    return {
+      id: stream.id || '',
+      stream_key: stream.stream_key || '',
+      playback_ids: stream.playback_ids?.map(pid => ({
+        id: pid.id || '',
+        policy: (pid.policy as 'public' | 'signed') || 'public'
+      })) || [],
+      status: stream.status || 'idle',
+      created_at: stream.created_at || new Date().toISOString(),
+      reconnect_window: stream.reconnect_window,
+      reduced_latency: stream.reduced_latency,
+      test: stream.test
+    }
+  } catch (error) {
+    console.error('Error getting MUX live stream:', error)
     return null
   }
+}
 
+// Create an asset from a live stream recording
+export async function createAsset(input: { url: string }): Promise<any> {
   try {
-    const asset = await mux.video.assets.create({
-      input: [input],
+    const response = await mux.video.assets.create({
+      input: [{ url: input.url }],
       playback_policy: ['public']
     })
-    return asset
+
+    return response.data
   } catch (error) {
     console.error('Error creating MUX asset:', error)
-    throw new Error('Failed to create asset')
+    throw error
   }
 }
 
-export async function getAsset(assetId: string): Promise<any> {
-  if (!mux) {
-    console.error('MUX SDK not available')  
-    return null
-  }
-
-  try {
-    return await mux.video.assets.retrieve(assetId)
-  } catch (error) {
-    console.error('Error retrieving MUX asset:', error)
-    return null
-  }
+// Helper function to get playback URL
+export function getPlaybackUrl(playbackId: string): string {
+  return `https://stream.mux.com/${playbackId}.m3u8`
 }
 
-export function generatePlaybackUrl(playbackId: string, options?: {
-  token?: string
-  thumbnailTime?: number
-}): string {
-  let url = `https://stream.mux.com/${playbackId}.m3u8`
-  
-  if (options?.token) {
-    url += `?token=${options.token}`
-  }
-  
-  return url
-}
-
-export function generateThumbnailUrl(playbackId: string, options?: {
-  time?: number
+// Helper function to generate thumbnail URL
+export function getThumbnailUrl(playbackId: string, options: {
   width?: number
   height?: number
-  fitMode?: string
-}): string {
-  let url = `https://image.mux.com/${playbackId}/thumbnail.jpg`
-  
-  const params = new URLSearchParams()
-  if (options?.time !== undefined) params.append('time', options.time.toString())
-  if (options?.width) params.append('width', options.width.toString())
-  if (options?.height) params.append('height', options.height.toString())
-  if (options?.fitMode) params.append('fit_mode', options.fitMode)
-  
-  const queryString = params.toString()
-  if (queryString) {
-    url += `?${queryString}`
-  }
-  
-  return url
+  time?: number
+} = {}): string {
+  const { width = 640, height = 360, time = 0 } = options
+  return `https://image.mux.com/${playbackId}/thumbnail.jpg?width=${width}&height=${height}&time=${time}`
 }
 
-// Helper function to validate MUX configuration
+// Validate MUX configuration
 export function validateMuxConfig(): boolean {
-  return Boolean(MUX_TOKEN_ID && MUX_TOKEN_SECRET && mux)
+  return !!(process.env.MUX_TOKEN_ID && process.env.MUX_TOKEN_SECRET)
 }
 
-// Helper function to get MUX webhook signature verification
-export function verifyWebhookSignature(
-  rawBody: string,
-  signature: string,
-  secret: string
-): boolean {
-  if (!mux || !mux.webhooks) {
-    return false
-  }
-
+// Get stream status
+export async function getStreamStatus(streamId: string): Promise<string | null> {
   try {
-    return mux.webhooks.verifyHeader(rawBody, signature, secret)
+    const stream = await getLiveStream(streamId)
+    return stream?.status || null
   } catch (error) {
-    console.error('Error verifying MUX webhook signature:', error)
-    return false
+    console.error('Error getting stream status:', error)
+    return null
   }
 }
