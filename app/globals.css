@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .stream-player {
+    @apply aspect-video w-full bg-black rounded-lg overflow-hidden;
+  }
+  
+  .stream-player video {
+    @apply w-full h-full object-cover;
+  }
+  
+  .chat-container {
+    @apply border border-border rounded-lg bg-card h-full flex flex-col;
+  }
+  
+  .chat-messages {
+    @apply flex-1 overflow-y-auto p-4 space-y-2;
+  }
+  
+  .chat-input {
+    @apply border-t border-border p-4;
+  }
+  
+  .stream-status-live {
+    @apply bg-red-500 text-white text-sm px-2 py-1 rounded-full animate-pulse-live;
+  }
+  
+  .stream-status-scheduled {
+    @apply bg-yellow-500 text-white text-sm px-2 py-1 rounded-full;
+  }
+  
+  .stream-status-ended {
+    @apply bg-gray-500 text-white text-sm px-2 py-1 rounded-full;
+  }
+  
+  .stream-status-private {
+    @apply bg-purple-500 text-white text-sm px-2 py-1 rounded-full;
+  }
+  
+  .viewer-count {
+    @apply flex items-center gap-1 text-sm text-muted-foreground;
+  }
+  
+  .stream-card {
+    @apply border border-border rounded-lg p-6 hover:shadow-lg transition-shadow bg-card;
+  }
+  
+  .access-link-card {
+    @apply border border-border rounded-lg p-4 bg-card space-y-3;
+  }
+  
+  .permission-badge {
+    @apply text-xs px-2 py-1 rounded-full font-medium;
+  }
+  
+  .permission-view-only {
+    @apply bg-gray-100 text-gray-800;
+  }
+  
+  .permission-chat {
+    @apply bg-blue-100 text-blue-800;
+  }
+  
+  .permission-moderator {
+    @apply bg-purple-100 text-purple-800;
+  }
+  
+  .btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 font-medium py-2 px-4 rounded-lg transition-colors;
+  }
+  
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground hover:bg-secondary/80 font-medium py-2 px-4 rounded-lg transition-colors;
+  }
+  
+  .btn-destructive {
+    @apply bg-destructive text-destructive-foreground hover:bg-destructive/90 font-medium py-2 px-4 rounded-lg transition-colors;
+  }
+  
+  .form-input {
+    @apply flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  
+  .form-textarea {
+    @apply flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  
+  .form-select {
+    @apply flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}
+
+/* Custom scrollbars */
+.chat-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground));
+  border-radius: 2px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--foreground));
+}
+
+/* Video player specific styles */
+.mux-player {
+  width: 100%;
+  height: 100%;
+}
+
+.video-overlay {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+/* Loading animations */
+@keyframes pulse-skeleton {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.skeleton {
+  animation: pulse-skeleton 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Dark mode overrides for better streaming experience */
+@media (prefers-color-scheme: dark) {
+  .dark {
+    color-scheme: dark;
+  }
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .stream-player {
+    @apply rounded-none;
+  }
+  
+  .chat-container {
+    @apply rounded-none border-x-0;
+  }
+  
+  .stream-card {
+    @apply p-4;
+  }
+}
+
+/* Focus styles for accessibility */
+.focus-visible {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .stream-status-live {
+    @apply border-2 border-white;
+  }
+  
+  .btn-primary {
+    @apply border-2 border-foreground;
+  }
+  
+  .form-input {
+    @apply border-2;
+  }
+}
