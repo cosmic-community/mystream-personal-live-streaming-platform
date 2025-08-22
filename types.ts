@@ -10,13 +10,19 @@ export interface CosmicObject {
   modified_at: string;
 }
 
+// Select-dropdown field structure from Cosmic CMS
+export interface SelectDropdownField {
+  key: string;
+  value: string;
+}
+
 // Stream Sessions
 export interface StreamSession extends CosmicObject {
   type: 'stream-sessions';
   metadata: {
     stream_title: string;
     description?: string;
-    status: StreamStatus;
+    status: SelectDropdownField;
     stream_key?: string;
     mux_playback_id?: string;
     start_time?: string;
@@ -25,10 +31,10 @@ export interface StreamSession extends CosmicObject {
       url: string;
       imgix_url: string;
     };
-    recording_url?: string;
+    recording_url?: string | null;
     viewer_count?: number;
     chat_enabled?: boolean;
-    stream_quality?: StreamQuality;
+    stream_quality?: SelectDropdownField;
     tags?: string;
   };
 }
@@ -40,10 +46,10 @@ export interface AccessLink extends CosmicObject {
     access_token: string;
     stream_session?: StreamSession;
     expiration_date?: string;
-    permissions?: AccessPermission;
+    permissions?: SelectDropdownField;
     generated_link?: string;
     usage_count?: number;
-    last_accessed?: string;
+    last_accessed?: string | null;
     active?: boolean;
   };
 }
@@ -55,8 +61,8 @@ export interface StreamSettings extends CosmicObject {
     default_title_template?: string;
     default_description?: string;
     auto_record?: boolean;
-    default_privacy?: PrivacyLevel;
-    default_quality?: StreamQuality;
+    default_privacy?: SelectDropdownField;
+    default_quality?: SelectDropdownField;
     default_chat_enabled?: boolean;
     overlay_settings?: {
       show_viewer_count?: boolean;
@@ -81,12 +87,12 @@ export interface ChatMessage extends CosmicObject {
     viewer_name: string;
     stream_session?: StreamSession;
     timestamp: string;
-    message_type?: MessageType;
+    message_type?: SelectDropdownField;
     viewer_ip?: string;
   };
 }
 
-// Type literals for select-dropdown values
+// Type literals for select-dropdown keys
 export type StreamStatus = 'scheduled' | 'live' | 'ended' | 'private';
 export type AccessPermission = 'view-only' | 'chat' | 'moderator';
 export type PrivacyLevel = 'private' | 'unlisted' | 'public';
@@ -140,7 +146,7 @@ export interface CreateStreamFormData {
 }
 
 // Utility types
-export type OptionalMetadata<T> = Partial<T['metadata']>;
+export type OptionalMetadata<T extends CosmicObject> = Partial<T['metadata']>;
 export type CreateStreamData = Omit<StreamSession, 'id' | 'created_at' | 'modified_at'>;
 export type CreateAccessLinkData = Omit<AccessLink, 'id' | 'created_at' | 'modified_at'>;
 
@@ -195,4 +201,13 @@ export interface StreamStatusMessage extends WebSocketMessage {
     status: StreamStatus;
     stream_id: string;
   };
+}
+
+// Helper functions for select-dropdown fields
+export function getSelectDropdownKey(field: SelectDropdownField | undefined): string {
+  return field?.key || '';
+}
+
+export function getSelectDropdownValue(field: SelectDropdownField | undefined): string {
+  return field?.value || '';
 }

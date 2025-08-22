@@ -1,104 +1,110 @@
-import jwt from 'jsonwebtoken';
+import Mux from '@mux/mux-node'
+import jwt from 'jsonwebtoken'
 
-export interface MuxSignedURLOptions {
-  playbackId: string;
-  expirationTime?: number;
-  keyId?: string;
-  keySecret?: string;
+const mux = new Mux({
+  tokenId: process.env.MUX_TOKEN_ID!,
+  tokenSecret: process.env.MUX_TOKEN_SECRET!
+})
+
+export const { video: Video } = mux
+
+// Create a live stream
+export async function createLiveStream(options: {
+  playback_policy: string[]
+  new_asset_settings?: {
+    playback_policy: string[]
+  }
+}) {
+  try {
+    const liveStream = await Video.liveStreams.create(options)
+    return liveStream
+  } catch (error) {
+    console.error('Error creating live stream:', error)
+    throw new Error('Failed to create live stream')
+  }
 }
 
-export function generateSignedPlaybackUrl({
-  playbackId,
-  expirationTime = 3600, // 1 hour default
-  keyId = process.env.MUX_TOKEN_ID,
-  keySecret = process.env.MUX_TOKEN_SECRET
-}: MuxSignedURLOptions): string {
-  if (!keyId || !keySecret) {
-    throw new Error('MUX credentials are required');
+// Generate JWT token for Mux player
+export function generateMuxJWT(playbackId: string, options: {
+  expiration?: string
+  audience?: string
+} = {}) {
+  const privateKey = Buffer.from(process.env.MUX_SIGNING_KEY_PRIVATE_KEY || '', 'base64')
+  const keyId = process.env.MUX_SIGNING_KEY_ID
+  
+  if (!privateKey || !keyId) {
+    throw new Error('Mux signing key or key ID not configured')
   }
-
-  const now = Math.floor(Date.now() / 1000);
-  const exp = now + expirationTime;
 
   const payload = {
     sub: playbackId,
-    aud: 'v',
-    exp,
-    kid: keyId
-  };
+    aud: options.audience || 'v',
+    exp: Math.floor(Date.now() / 1000) + (60 * 60), // 1 hour expiration
+  }
 
-  const token = jwt.sign(payload, Buffer.from(keySecret, 'base64'), {
+  return jwt.sign(payload, privateKey, {
     algorithm: 'RS256',
-    header: {
-      kid: keyId
-    }
-  });
-
-  return `https://stream.mux.com/${playbackId}.m3u8?token=${token}`;
+    keyid: keyId,
+  })
 }
 
-export function getMuxPlayerUrl(playbackId: string, signed: boolean = true): string {
-  if (signed) {
-    return generateSignedPlaybackUrl({ playbackId });
+// Get playback URL for a video
+export function getPlaybackUrl(playbackId: string, token?: string) {
+  const baseUrl = `https://stream.mux.com/${playbackId}.m3u8`
+  if (token) {
+    return `${baseUrl}?token=${token}`
   }
-  return `https://stream.mux.com/${playbackId}.m3u8`;
+  return baseUrl
 }
 
-export function validateMuxCredentials(): boolean {
-  return !!(process.env.MUX_TOKEN_ID && process.env.MUX_TOKEN_SECRET);
-}
-
-// MUX Video API integration for creating live streams
-export async function createMuxLiveStream(streamKey?: string): Promise<{
-  playbackId: string;
-  streamKey: string;
-}> {
-  if (!process.env.MUX_TOKEN_ID || !process.env.MUX_TOKEN_SECRET) {
-    throw new Error('MUX credentials not configured');
-  }
-
+// Delete a live stream
+export async function deleteLiveStream(liveStreamId: string) {
   try {
-    // This would typically involve calling MUX API to create a live stream
-    // For now, we'll return mock data as the actual MUX API integration
-    // would require the full MUX SDK and proper API calls
-    
-    const mockPlaybackId = `mock_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const mockStreamKey = streamKey || `live_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-    return {
-      playbackId: mockPlaybackId,
-      streamKey: mockStreamKey
-    };
+    await Video.liveStreams.delete(liveStreamId)
   } catch (error) {
-    console.error('Error creating MUX live stream:', error);
-    throw new Error('Failed to create MUX live stream');
+    console.error('Error deleting live stream:', error)
+    throw new Error('Failed to delete live stream')
   }
 }
 
-export function getMuxThumbnailUrl(playbackId: string, options: {
-  width?: number;
-  height?: number;
-  fit?: 'crop' | 'pad' | 'fill';
-  time?: number;
-} = {}): string {
-  const {
-    width = 640,
-    height = 360,
-    fit = 'crop',
-    time = 0
-  } = options;
-
-  return `https://image.mux.com/${playbackId}/thumbnail.jpg?width=${width}&height=${height}&fit=${fit}&time=${time}`;
+// Get live stream details
+export async function getLiveStream(liveStreamId: string) {
+  try {
+    const liveStream = await Video.liveStreams.retrieve(liveStreamId)
+    return liveStream
+  } catch (error) {
+    console.error('Error fetching live stream:', error)
+    throw new Error('Failed to fetch live stream')
+  }
 }
 
-// Helper to check if a stream is currently live
-export async function checkStreamLiveStatus(playbackId: string): Promise<boolean> {
+// Create simulcast target
+export async function createSimulcastTarget(liveStreamId: string, options: {
+  url: string
+  stream_key: string
+  passthrough?: string
+}) {
   try {
-    // In a real implementation, this would check MUX API for live status
-    // For now, return false as we don't have actual live streams
-    return false;
+    const simulcastTarget = await Video.liveStreams.createSimulcastTarget(liveStreamId, options)
+    return simulcastTarget
   } catch (error) {
-    console.error('Error checking stream live status:', error);
-    return false;
+    console.error('Error creating simulcast target:', error)
+    throw new Error('Failed to create simulcast target')
+  }
+}
+
+// Update live stream
+export async function updateLiveStream(liveStreamId: string, options: {
+  playback_policy?: string[]
+  new_asset_settings?: {
+    playback_policy: string[]
+  }
+}) {
+  try {
+    const liveStream = await Video.liveStreams.update(liveStreamId, options)
+    return liveStream
+  } catch (error) {
+    console.error('Error updating live stream:', error)
+    throw new Error('Failed to update live stream')
   }
 }

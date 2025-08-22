@@ -1,4 +1,3 @@
-import { WebSocket } from 'ws';
 import type { 
   WebSocketMessage, 
   ChatWebSocketMessage, 
@@ -7,12 +6,22 @@ import type {
   MessageType 
 } from '@/types';
 
+// Server-side WebSocket manager for Node.js environment
+let WebSocketServer: any;
+if (typeof window === 'undefined') {
+  try {
+    WebSocketServer = require('ws').WebSocketServer;
+  } catch (e) {
+    // WebSocket server not available
+  }
+}
+
 // WebSocket connection manager
 class WebSocketManager {
-  private connections = new Map<string, Set<WebSocket>>();
+  private connections = new Map<string, Set<any>>();
   private viewerCounts = new Map<string, number>();
 
-  public addConnection(streamId: string, ws: WebSocket): void {
+  public addConnection(streamId: string, ws: any): void {
     if (!this.connections.has(streamId)) {
       this.connections.set(streamId, new Set());
     }
@@ -24,13 +33,13 @@ class WebSocketManager {
       this.removeConnection(streamId, ws);
     });
 
-    ws.on('error', (error) => {
+    ws.on('error', (error: any) => {
       console.error('WebSocket error:', error);
       this.removeConnection(streamId, ws);
     });
   }
 
-  public removeConnection(streamId: string, ws: WebSocket): void {
+  public removeConnection(streamId: string, ws: any): void {
     const connections = this.connections.get(streamId);
     if (connections) {
       connections.delete(ws);
@@ -63,7 +72,7 @@ class WebSocketManager {
     const messageString = JSON.stringify(message);
     
     connections.forEach((ws) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) { // OPEN state
         try {
           ws.send(messageString);
         } catch (error) {

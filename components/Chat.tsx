@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { createWebSocketConnection, sendChatMessage, sanitizeMessage } from '@/lib/websocket'
 import { getChatMessages, createChatMessage } from '@/lib/cosmic'
-import type { ChatMessage, WebSocketMessage, AccessPermission } from '@/types'
+import type { ChatMessage, AccessPermission } from '@/types'
 import { Send, MessageCircle, Users } from 'lucide-react'
 
 interface ChatProps {
@@ -11,6 +10,12 @@ interface ChatProps {
   viewerName: string
   isEnabled: boolean
   permissions: AccessPermission
+}
+
+interface WebSocketMessage {
+  type: 'chat' | 'viewer_count' | 'stream_status' | 'system';
+  data: any;
+  timestamp: string;
 }
 
 export default function Chat({ streamId, viewerName, isEnabled, permissions }: ChatProps) {
@@ -44,20 +49,41 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
 
   // WebSocket connection
   useEffect(() => {
-    if (!isEnabled) return
+    if (!isEnabled || typeof window === 'undefined') return
 
-    const ws = createWebSocketConnection(
-      streamId,
-      handleWebSocketMessage,
-      handleWebSocketError,
-      handleWebSocketClose
-    )
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL || `${protocol}//${host}/api/ws`;
+      
+      const ws = new WebSocket(`${wsUrl}?streamId=${streamId}`);
 
-    if (ws) {
-      wsRef.current = ws
-      ws.addEventListener('open', () => {
+      ws.onopen = () => {
         setIsConnected(true)
-      })
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const message: WebSocketMessage = JSON.parse(event.data as string);
+          handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      }
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+        setIsConnected(false)
+      }
+
+      ws.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason)
+        setIsConnected(false)
+      }
+
+      wsRef.current = ws
+    } catch (error) {
+      console.error('Error creating WebSocket connection:', error)
     }
 
     return () => {
@@ -91,7 +117,7 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
             message_content: message.data.message,
             viewer_name: message.data.viewer_name,
             timestamp: message.timestamp,
-            message_type: message.data.message_type || 'regular'
+            message_type: message.data.message_type ? { key: message.data.message_type, value: message.data.message_type } : undefined
           }
         }
         setMessages(prev => [...prev, chatMessage])
@@ -106,28 +132,27 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
     }
   }
 
-  const handleWebSocketError = (error: Event) => {
-    console.error('WebSocket error:', error)
-    setIsConnected(false)
-  }
-
-  const handleWebSocketClose = (event: CloseEvent) => {
-    console.log('WebSocket closed:', event.code, event.reason)
-    setIsConnected(false)
-  }
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!newMessage.trim() || !isConnected || permissions === 'view-only') return
 
-    const sanitizedMessage = sanitizeMessage(newMessage)
+    const sanitizedMessage = newMessage.trim().substring(0, 500)
     if (!sanitizedMessage) return
 
     try {
       // Send via WebSocket for real-time delivery
-      if (wsRef.current) {
-        sendChatMessage(wsRef.current, viewerName, sanitizedMessage, 'regular')
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        const chatMessage = {
+          type: 'chat',
+          data: {
+            message: sanitizedMessage,
+            viewer_name: viewerName,
+            message_type: 'regular'
+          },
+          timestamp: new Date().toISOString()
+        }
+        wsRef.current.send(JSON.stringify(chatMessage))
       }
 
       // Also save to Cosmic CMS for persistence
@@ -144,8 +169,9 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
     }
   }
 
-  const getMessageTypeColor = (messageType: string) => {
-    switch (messageType) {
+  const getMessageTypeColor = (messageType?: { key: string; value: string }) => {
+    const type = messageType?.key || 'regular'
+    switch (type) {
       case 'system':
         return 'text-yellow-400'
       case 'moderator':
@@ -155,8 +181,9 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
     }
   }
 
-  const getMessageTypeIcon = (messageType: string) => {
-    switch (messageType) {
+  const getMessageTypeIcon = (messageType?: { key: string; value: string }) => {
+    const type = messageType?.key || 'regular'
+    switch (type) {
       case 'moderator':
         return '🔧'
       case 'system':
@@ -217,8 +244,8 @@ export default function Chat({ streamId, viewerName, isEnabled, permissions }: C
                 <div className="flex items-start gap-2">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`font-medium text-sm ${getMessageTypeColor(message.metadata?.message_type || 'regular')}`}>
-                        {getMessageTypeIcon(message.metadata?.message_type || 'regular')}
+                      <span className={`font-medium text-sm ${getMessageTypeColor(message.metadata?.message_type)}`}>
+                        {getMessageTypeIcon(message.metadata?.message_type)}
                         {message.metadata?.viewer_name || 'Anonymous'}
                       </span>
                       <span className="text-xs text-muted-foreground">

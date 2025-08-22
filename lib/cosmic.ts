@@ -4,8 +4,7 @@ import type {
   AccessLink, 
   StreamSettings, 
   ChatMessage, 
-  CosmicResponse,
-  hasStatus
+  CosmicResponse
 } from '@/types'
 
 export const cosmic = createBucketClient({
@@ -161,6 +160,10 @@ export async function getAccessLinkByToken(token: string): Promise<AccessLink | 
     
     const link = links[0];
     
+    if (!link) {
+      return null;
+    }
+    
     // Check if link has expired
     if (link.metadata?.expiration_date) {
       const expirationDate = new Date(link.metadata.expiration_date);
@@ -245,7 +248,7 @@ export async function getStreamSettings(): Promise<StreamSettings | null> {
       return null;
     }
     
-    return settings[0]; // Should be singleton
+    return settings[0] || null; // Should be singleton
   } catch (error) {
     if (hasStatus(error) && error.status === 404) {
       return null;
