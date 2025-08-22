@@ -57,13 +57,15 @@ async function WatchContent({ searchParams }: WatchPageProps) {
     )
   }
 
-  // Get permissions with proper type casting
-  const permissionsKey = accessLink.metadata?.permissions?.key || 'view-only'
+  // Get permissions with proper type checking and casting
+  const permissionsKey = accessLink.metadata?.permissions?.key
   let permissions: AccessPermission = 'view-only' // Default fallback
   
-  // Type-safe permission assignment
-  if (permissionsKey === 'view-only' || permissionsKey === 'chat' || permissionsKey === 'moderator') {
-    permissions = permissionsKey as AccessPermission
+  // Type-safe permission assignment with explicit type checking
+  if (typeof permissionsKey === 'string') {
+    if (permissionsKey === 'view-only' || permissionsKey === 'chat' || permissionsKey === 'moderator') {
+      permissions = permissionsKey
+    }
   }
 
   const chatEnabled = streamSession.metadata.chat_enabled ?? false
@@ -98,13 +100,9 @@ async function WatchContent({ searchParams }: WatchPageProps) {
 
             {/* Stream Information */}
             <StreamInfo
-              title={streamSession.metadata.stream_title || streamSession.title}
-              description={streamSession.metadata.description || ''}
-              status={streamStatus}
-              startTime={streamSession.metadata.start_time}
-              endTime={streamSession.metadata.end_time}
-              tags={streamSession.metadata.tags}
-              viewerCount={streamSession.metadata.viewer_count || 0}
+              stream={streamSession}
+              viewerName="Anonymous Viewer"
+              permissions={permissions}
             />
           </div>
 
