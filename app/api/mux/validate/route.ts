@@ -1,20 +1,22 @@
 import { NextResponse } from 'next/server'
-import { validateMuxConfiguration } from '@/lib/mux'
+import { validateMuxConfig } from '@/lib/mux'
 
 export async function GET() {
   try {
-    const validation = validateMuxConfiguration()
+    const validation = await validateMuxConfig()
     
     return NextResponse.json({
-      configured: validation.isConfigured,
-      missing: validation.missingVariables,
-      message: validation.isConfigured 
-        ? 'MUX is properly configured' 
-        : `Missing environment variables: ${validation.missingVariables.join(', ')}`
+      isConfigured: validation.isConfigured,
+      missingVariables: validation.missingVariables
     })
   } catch (error) {
+    console.error('Error validating MUX configuration:', error)
     return NextResponse.json(
-      { error: 'Failed to validate MUX configuration' },
+      { 
+        error: 'Failed to validate MUX configuration',
+        isConfigured: false,
+        missingVariables: ['MUX_TOKEN_ID', 'MUX_TOKEN_SECRET']
+      },
       { status: 500 }
     )
   }
